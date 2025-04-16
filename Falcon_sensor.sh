@@ -1,61 +1,48 @@
-import psutil
-import time
-import logging
-import subprocess
-from datetime import datetime
+#!/bin/bash
 
-# Configuration
-SERVICE_NAME = "falcon-sensor"  # Adjust if different on your system
-RAM_THRESHOLD = 80  # in percentage
-CHECK_INTERVAL = 60  # seconds between checks
-LOG_FILE = "/var/log/falconsensor_monitor.log"  # Make sure script has permission to write here
+# === Configuration ===
+SERVICE_NAME="falcon-sensor"
+RAM_THRESHOLD=80  # RAM usage threshold in percentage
+LOG_FILE="/var/log/falconsensor_monitor.log"
+CHECK_INTERVAL=60  # Time between checks in seconds
 
-# Setup logging
-logging.basicConfig(
-    filename=LOG_FILE,
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+# === Function to get process memory usage in percentage ===
+get_ram_usage() {
+    local pid=$1
+    local proc_rss=$(grep VmRSS /proc/$pid/status 2>/dev/null | awk '{print $2}')
+    local total_mem=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+    if [[ -n "$proc_rss" && -n "$total_mem" ]]; then
+        echo $(( 100 * proc_rss / total_mem ))
+    else
+        echo 0
+    fi
+}
 
-def get_falconsensor_pid():
-    """Return PID of the falcon-sensor process (if running)."""
-    for proc in psutil.process_iter(['pid', 'name']):
-        if "falcon-sensor" in proc.info['name'].lower():
-            return proc.info['pid']
-    return None
+# === Function to log messages ===
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOG_FILE"
+}
 
-def get_process_ram_usage(pid):
-    """Return RAM usage percentage of the process with given PID."""
-    process = psutil.Process(pid)
-    mem_info = process.memory_info()
-    total_mem = psutil.virtual_memory().total
-    return (mem_info.rss / total_mem) * 100
+# === Monitor Loop ===
+log "Started FalconSensor RAM monitor."
 
-def restart_service():
-    """Restart the FalconSensor service using systemctl (Linux)."""
-    try:
-        subprocess.run(["sudo", "systemctl", "restart", SERVICE_NAME], check=True)
-        logging.info(f"Service '{SERVICE_NAME}' restarted due to high RAM usage.")
-    except subprocess.CalledProcessError as e:
-        logging.error(f"Failed to restart service '{SERVICE_NAME}': {e}")
+while true; do
+    pid=$(pgrep -f "falcon-sensor")
 
-def monitor():
-    logging.info("Started FalconSensor RAM monitor.")
-    while True:
-        pid = get_falconsensor_pid()
-        if pid:
-            try:
-                usage = get_process_ram_usage(pid)
-                logging.debug(f"FalconSensor RAM usage: {usage:.2f}%")
-                if usage > RAM_THRESHOLD:
-                    logging.warning(f"High RAM usage detected: {usage:.2f}%. Restarting service.")
-                    restart_service()
-            except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
-                logging.error(f"Error accessing FalconSensor process: {e}")
-        else:
-            logging.warning("FalconSensor process not found.")
-        time.sleep(CHECK_INTERVAL)
+    if [[ -n "$pid" ]]; then
+        usage=$(get_ram_usage "$pid")
+        if (( usage > RAM_THRESHOLD )); then
+            log "High RAM usage detected: ${usage}%. Restarting $SERVICE_NAME..."
+            systemctl restart "$SERVICE_NAME"
+            if [[ $? -eq 0 ]]; then
+                log "Service '$SERVICE_NAME' restarted successfully."
+            else
+                log "Failed to restart service '$SERVICE_NAME'."
+            fi
+        fi
+    else
+        log "FalconSensor process not found."
+    fi
 
-if __name__ == "__main__":
-    monitor()
-
+    sleep "$CHECK_INTERVAL"
+done
