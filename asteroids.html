@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Asteroids: Deep Space Haul</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --space-black: #08080c;
+            --ship-white: #ffffff; /* NEW: Ship Color */
+            --bullet-green: #39ff14; /* NEW: Lasers Color (was ship-green) */
+            --asteroid-red: #ff3864; /* NEW: Asteroid Color (was bullet-red/asteroid-grey) */
+            --ui-yellow: #ffee10; /* Keep: UI Text */
+            --ui-purple: #a300ff; /* NEW: Outline/Border Primary */
+            --ui-purple-glow: #d9b3ff; /* NEW: Outline/Border Secondary */
+        }
+
+        body {
+            background-color: var(--space-black);
+            color: var(--ui-yellow);
+            font-family: 'Space Mono', monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            padding: 0;
+            margin: 0;
+            min-height: 100vh;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        #game-container {
+            width: 95vw;
+            max-width: 800px;
+            margin: 1rem auto;
+            /* UPDATED: Purple outline */
+            border: 2px solid var(--ui-purple);
+            border-radius: 8px;
+            box-shadow: 0 0 20px rgba(163, 0, 255, 0.5); /* Using RGBA of ui-purple */
+            background-color: #000000;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        #gameCanvas {
+            width: 100%;
+            display: block;
+            background-color: var(--space-black);
+            touch-action: none;
+        }
+
+        #game-info {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.5rem 1rem;
+            background-color: #1a1a1a;
+            font-size: 1.2rem;
+            font-weight: 700;
+            /* UPDATED: Purple border */
+            border-bottom: 2px solid var(--ui-purple);
+        }
+
+        /* Message Box / Start Screen */
+        #message-box {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            text-align: center;
+        }
+
+        #message-content {
+            padding: 2rem;
+            /* UPDATED: Red border for Game Over */
+            border: 3px solid var(--asteroid-red);
+            background-color: #150000;
+            box-shadow: 0 0 30px var(--asteroid-red);
+            border-radius: 12px;
+            max-width: 90%;
+        }
+
+        #message-box h2 {
+            font-size: 2.5rem;
+            /* UPDATED: Green for title */
+            color: var(--bullet-green);
+            margin-bottom: 1rem;
+        }
+
+        #message-box p {
+            font-size: 1rem;
+            margin-bottom: 1.5rem;
+            color: var(--asteroid-red);
+            white-space: pre-line;
+        }
+
+        .action-button {
+            /* UPDATED: Purple background */
+            background-color: var(--ui-purple);
+            color: var(--space-black);
+            padding: 10px 20px;
+            border-radius: 4px;
+            font-weight: 700;
+            font-size: 1.1rem;
+            cursor: pointer;
+            /* UPDATED: Purple glow */
+            box-shadow: 0 0 15px var(--ui-purple-glow);
+            transition: background-color 0.2s, transform 0.1s;
+        }
+
+        .action-button:hover {
+            /* UPDATED: Lighter purple on hover */
+            background-color: #be73ff;
+        }
+        .action-button:active {
+            transform: scale(0.98);
+        }
+
+        /* Mobile Controls */
+        #mobile-controls {
+            display: flex;
+            justify-content: space-around;
+            width: 95vw;
+            max-width: 800px;
+            margin-top: 10px;
+        }
+
+        .mobile-btn {
+            /* UPDATED: Rotate/Thrust buttons use Asteroid Red */
+            background-color: var(--asteroid-red);
+            color: var(--space-black);
+            padding: 15px;
+            font-size: 1.5rem;
+            border-radius: 50%;
+            width: 65px;
+            height: 65px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+        }
+        #fire-btn {
+            /* UPDATED: Fire button uses Laser Green */
+            background-color: var(--bullet-green);
+            color: white;
+            box-shadow: 0 0 10px var(--bullet-green);
+        }
+        
+        @media (min-width: 801px) {
+            #mobile-controls {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <div id="game-info">
+            <div id="score-display">SCORE: 0</div>
+            <div id="lives-display">LIVES: 3</div>
+        </div>
+        <canvas id="gameCanvas"></canvas>
+
+        <!-- Start/Game Over Screen -->
+        <div id="message-box">
+            <div id="message-content">
+                <h2 id="message-title">ASTEROIDS: DEEP SPACE HAUL</h2>
+                <p id="message-text">
+                    Use **W / ↑** to **Thrust**
+                    Use **A, D / ←, →** to **Rotate**
+                    Use **SPACE / Tap Fire** to **Shoot**
+
+                    Survive the endless asteroid fields!
+                </p>
+                <button class="action-button" id="start-button">START GAME</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile Controls -->
+    <div id="mobile-controls">
+        <button class="mobile-btn" id="left-btn">⟵</button>
+        <button class="mobile-btn" id="up-btn">⟰</button>
+        <button class="mobile-btn" id="right-btn">⟶</button>
+        <button class="mobile-btn" id="fire-btn">FIRE</button>
+    </div>
+
+    <script>
+        // --- Core Game Setup ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        let animationFrameId;
+
+        // --- Game Constants and State ---
+        const SHIP_SIZE = 20;
+        const SHIP_THRUST = 0.04;
+        const SHIP_FRICTION = 0.995;
+        const SHIP_ROTATION_SPEED = 0.05;
+        const BULLET_SIZE = 3;
+        const BULLET_SPEED = 5;
+        const BULLET_LIFESPAN = 100; // frames
+        const ASTEROID_VERTICES = 10;
+        const ASTEROID_SPEED = 1;
+        
+        let score = 0;
+        let lives = 3;
+        let gameRunning = false;
+        let ship;
+        let bullets = [];
+        let asteroids = [];
+        let keys = {
+            ArrowUp: false, w: false,
+            ArrowLeft: false, a: false,
+            ArrowRight: false, d: false,
+            Space: false,
+            
+        };
+        let lastFired = 0;
+        const FIRE_RATE = 200; // ms between shots
+
+        // --- DOM Elements ---
+        const scoreDisplay = document.getElementById('score-display');
+        const livesDisplay = document.getElementById('lives-display');
+        const messageBox = document.getElementById('message-box');
+        const messageTitle = document.getElementById('message-title');
+        const messageText = document.getElementById('message-text');
+        const startButton = document.getElementById('start-button');
+        
+        // --- Utility Functions ---
+
+        function dist(x1, y1, x2, y2) {
+            return Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+        }
+        
+        function setupCanvas() {
+            const container = document.getElementById('game-container');
+            const containerWidth = container.clientWidth;
+            const width = Math.min(containerWidth, 800);
+            const height = width * (3 / 4); 
+            canvas.width = width;
+            canvas.height = height;
+        }
+        
+        // Helper to retrieve CSS variables
+        function getCssVar(name) {
+             return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+        }
+
+        // --- Game Object Classes ---
+
+        class Ship {
+            constructor() {
+                this.reset();
+            }
+
+            reset() {
+                this.x = canvas.width / 2;
+                this.y = canvas.height / 2;
+                this.angle = 0; 
+                this.vx = 0;
+                this.vy = 0;
+                this.radius = SHIP_SIZE / 2;
+                this.isAccelerating = false;
+            }
+
+            draw() {
+                // Ship Body (Triangle) - UPDATED TO WHITE
+                ctx.strokeStyle = getCssVar('--ship-white'); 
+                ctx.lineWidth = 2;
+
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.angle);
+
+                ctx.beginPath();
+                ctx.moveTo(this.radius, 0); // Nose
+                ctx.lineTo(-this.radius * 0.8, -this.radius * 0.8); // Back left
+                ctx.lineTo(-this.radius * 0.6, 0); // Thrust exhaust point
+                ctx.lineTo(-this.radius * 0.8, this.radius * 0.8); // Back right
+                ctx.closePath();
+                ctx.stroke();
+
+                // Draw exhaust flame when thrusting - UPDATED TO ASTEROID RED
+                if (this.isAccelerating) {
+                    ctx.fillStyle = getCssVar('--asteroid-red'); 
+                    ctx.beginPath();
+                    ctx.moveTo(-this.radius * 0.6, -this.radius * 0.4);
+                    ctx.lineTo(-this.radius * 1.5, 0);
+                    ctx.lineTo(-this.radius * 0.6, this.radius * 0.4);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+
+                ctx.restore();
+            }
+
+            update() {
+                this.isAccelerating = false;
+
+                // Rotation
+                if (keys.ArrowLeft || keys.a) {
+                    this.angle -= SHIP_ROTATION_SPEED;
+                }
+                if (keys.ArrowRight || keys.d) {
+                    this.angle += SHIP_ROTATION_SPEED;
+                }
+
+                // Thrust
+                if (keys.ArrowUp || keys.w) {
+                    this.isAccelerating = true;
+                    this.vx += SHIP_THRUST * Math.cos(this.angle);
+                    this.vy += SHIP_THRUST * Math.sin(this.angle);
+                }
+
+                // Apply Friction
+                this.vx *= SHIP_FRICTION;
+                this.vy *= SHIP_FRICTION;
+
+                // Move
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Wrap around edges
+                if (this.x < -this.radius) this.x = canvas.width + this.radius;
+                if (this.x > canvas.width + this.radius) this.x = -this.radius;
+                if (this.y < -this.radius) this.y = canvas.height + this.radius;
+                if (this.y > canvas.height + this.radius) this.y = -this.radius;
+            }
+        }
+
+        class Bullet {
+            constructor(x, y, angle) {
+                this.x = x + ship.radius * Math.cos(angle);
+                this.y = y + ship.radius * Math.sin(angle);
+                this.vx = BULLET_SPEED * Math.cos(angle) + ship.vx;
+                this.vy = BULLET_SPEED * Math.sin(angle) + ship.vy;
+                this.radius = BULLET_SIZE / 2;
+                this.lifespan = BULLET_LIFESPAN;
+            }
+
+            draw() {
+                // UPDATED TO GREEN LASERS
+                ctx.fillStyle = getCssVar('--bullet-green'); 
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, 2 * Math.PI);
+                ctx.fill();
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.lifespan--;
+            }
+            
+            isOffScreen() {
+                 return this.x < 0 || this.x > canvas.width || this.y < 0 || this.y > canvas.height;
+            }
+        }
+
+        class Asteroid {
+            constructor(x, y, radius, vertices = ASTEROID_VERTICES) {
+                this.x = x;
+                this.y = y;
+                this.radius = radius;
+                this.vx = (Math.random() * 2 - 1) * ASTEROID_SPEED;
+                this.vy = (Math.random() * 2 - 1) * ASTEROID_SPEED;
+                this.vertices = vertices;
+                this.offsets = Array(vertices).fill(0).map(() => (Math.random() * 0.4 + 0.8) * this.radius); 
+                this.angleOffset = Math.random() * Math.PI * 2;
+                this.rotationSpeed = (Math.random() - 0.5) * 0.01;
+            }
+
+            draw() {
+                // UPDATED TO RED ASTEROIDS
+                ctx.strokeStyle = getCssVar('--asteroid-red'); 
+                ctx.lineWidth = 2;
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.angleOffset);
+
+                ctx.beginPath();
+                for (let i = 0; i < this.vertices; i++) {
+                    const angle = (i / this.vertices) * Math.PI * 2;
+                    const r = this.offsets[i];
+                    const x = r * Math.cos(angle);
+                    const y = r * Math.sin(angle);
+                    if (i === 0) {
+                        ctx.moveTo(x, y);
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                }
+                ctx.closePath();
+                ctx.stroke();
+
+                ctx.restore();
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.angleOffset += this.rotationSpeed;
+
+                // Wrap around edges
+                if (this.x < -this.radius) this.x = canvas.width + this.radius;
+                if (this.x > canvas.width + this.radius) this.x = -this.radius;
+                if (this.y < -this.radius) this.y = canvas.height + this.radius;
+                if (this.y > canvas.height + this.radius) this.y = -this.radius;
+            }
+        }
+
+        // --- Game Logic ---
+
+        function initGame() {
+            setupCanvas();
+            score = 0;
+            lives = 3;
+            scoreDisplay.textContent = `SCORE: ${score}`;
+            livesDisplay.textContent = `LIVES: ${lives}`;
+            
+            ship = new Ship();
+            bullets = [];
+            asteroids = [];
+            
+            spawnInitialAsteroids();
+
+            gameRunning = true;
+            messageBox.style.display = 'none';
+
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+            gameLoop();
+        }
+
+        function spawnInitialAsteroids() {
+            const numAsteroids = 4;
+            const size = 40; 
+            for (let i = 0; i < numAsteroids; i++) {
+                let x, y;
+                // Spawn away from center (where the player starts)
+                if (Math.random() < 0.5) {
+                    x = Math.random() < 0.5 ? 0 - size : canvas.width + size;
+                    y = Math.random() * canvas.height;
+                } else {
+                    x = Math.random() * canvas.width;
+                    y = Math.random() < 0.5 ? 0 - size : canvas.height + size;
+                }
+                asteroids.push(new Asteroid(x, y, size));
+            }
+        }
+        
+        function splitAsteroid(asteroid) {
+            score += Math.floor(100 / asteroid.radius); // Award score based on size
+            scoreDisplay.textContent = `SCORE: ${score}`;
+
+            if (asteroid.radius > 15) {
+                const newSize = asteroid.radius / 2;
+                // Create two smaller asteroids
+                for(let i = 0; i < 2; i++) {
+                     const newAsteroid = new Asteroid(asteroid.x, asteroid.y, newSize);
+                     // Give them a slight push in different directions
+                     newAsteroid.vx = asteroid.vx + (Math.random() * 2 - 1) * ASTEROID_SPEED * 0.5;
+                     newAsteroid.vy = asteroid.vy + (Math.random() * 2 - 1) * ASTEROID_SPEED * 0.5;
+                     asteroids.push(newAsteroid);
+                }
+            }
+        }
+
+        function fireBullet() {
+            const now = Date.now();
+            if (now - lastFired > FIRE_RATE) {
+                bullets.push(new Bullet(ship.x, ship.y, ship.angle));
+                lastFired = now;
+            }
+        }
+
+        function update() {
+            if (!gameRunning) return;
+
+            // 1. Update Ship
+            ship.update();
+
+            // 2. Update Asteroids
+            asteroids.forEach(a => a.update());
+
+            // 3. Update Bullets
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const b = bullets[i];
+                b.update();
+                if (b.lifespan <= 0 || b.isOffScreen()) {
+                    bullets.splice(i, 1);
+                }
+            }
+            
+            // 4. Collision Detection (Bullet vs Asteroid)
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const b = bullets[i];
+                for (let j = asteroids.length - 1; j >= 0; j--) {
+                    const a = asteroids[j];
+                    if (dist(b.x, b.y, a.x, a.y) < b.radius + a.radius) {
+                        // Collision!
+                        bullets.splice(i, 1);
+                        splitAsteroid(a);
+                        asteroids.splice(j, 1);
+                        // Stop inner loop and restart outer loop after splicing both arrays
+                        i = bullets.length; 
+                        break; 
+                    }
+                }
+            }
+            
+            // 5. Collision Detection (Ship vs Asteroid)
+            for (let i = asteroids.length - 1; i >= 0; i--) {
+                const a = asteroids[i];
+                if (dist(ship.x, ship.y, a.x, a.y) < ship.radius + a.radius) {
+                    // Ship Hit!
+                    lives--;
+                    livesDisplay.textContent = `LIVES: ${lives}`;
+                    asteroids.splice(i, 1); // Remove asteroid that hit
+                    
+                    if (lives <= 0) {
+                        gameOver();
+                        return;
+                    }
+                    
+                    // Respawn ship in the center (invulnerable for a short time visually)
+                    ship.reset();
+                    break; // Only take damage once per frame
+                }
+            }
+
+            // 6. Level Progression / Spawn Check
+            if (asteroids.length === 0) {
+                spawnInitialAsteroids(); // Respawn the initial set when cleared
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = getCssVar('--space-black');
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw game objects
+            ship.draw();
+            bullets.forEach(b => b.draw());
+            asteroids.forEach(a => a.draw());
+        }
+
+        function gameLoop() {
+            if (!gameRunning) return;
+
+            update();
+            draw();
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+        
+        function gameOver() {
+            gameRunning = false;
+            cancelAnimationFrame(animationFrameId);
+            
+            messageTitle.textContent = "GAME OVER";
+            messageText.textContent = `You were destroyed in the asteroid field!\nFinal Score: ${score}`;
+            startButton.textContent = 'RESTART';
+            messageBox.style.display = 'flex';
+        }
+
+
+        // --- Event Handlers ---
+
+        function handleKeyDown(event) {
+            const key = event.key.toLowerCase();
+            if (['arrowup', 'w', 'arrowleft', 'a', 'arrowright', 'd'].includes(key)) {
+                event.preventDefault(); 
+                keys[key] = true;
+            } else if (event.code === 'Space' && gameRunning) {
+                event.preventDefault();
+                fireBullet();
+            }
+        }
+
+        function handleKeyUp(event) {
+            const key = event.key.toLowerCase();
+            keys[key] = false;
+        }
+
+        function handleResize() {
+            setupCanvas();
+            // Re-center ship on resize if necessary
+            if (ship) {
+                ship.x = canvas.width / 2;
+                ship.y = canvas.height / 2;
+            }
+            if (gameRunning) {
+                 draw();
+            }
+        }
+        
+        // --- Mobile Control Handlers ---
+        function setupTouchControl(id, keyName) {
+            const btn = document.getElementById(id);
+            if (keyName !== 'Space') {
+                ['touchstart', 'mousedown'].forEach(event => btn.addEventListener(event, (e) => { e.preventDefault(); keys[keyName] = true; }, { passive: false }));
+                ['touchend', 'mouseup', 'touchcancel'].forEach(event => btn.addEventListener(event, (e) => { e.preventDefault(); keys[keyName] = false; }));
+            } else {
+                 ['touchstart', 'mousedown'].forEach(event => btn.addEventListener(event, (e) => { e.preventDefault(); fireBullet(); }, { passive: false }));
+            }
+        }
+
+
+        // --- Initialization ---
+
+        window.addEventListener('load', () => {
+            // Setup listeners
+            document.addEventListener('keydown', handleKeyDown);
+            document.addEventListener('keyup', handleKeyUp);
+            window.addEventListener('resize', handleResize);
+            
+            // Setup mobile controls (mapping to the keyboard keys for consistency)
+            setupTouchControl('up-btn', 'w');
+            setupTouchControl('left-btn', 'a');
+            setupTouchControl('right-btn', 'd');
+            setupTouchControl('fire-btn', 'Space'); // Handled separately in setupTouchControl
+
+            // Initial setup
+            setupCanvas(); 
+            startButton.addEventListener('click', initGame); 
+        });
+
+    </script>
+</body>
+</html>
