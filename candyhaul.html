@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Haunted Candy Haul</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Creepster&display=swap" rel="stylesheet">
+    <!-- Removed Tone.js audio library -->
+    <style>
+        :root {
+            --night-sky: #10002b;
+            --deep-purple: #3a0ca3;
+            --pumpkin-orange: #ff9900;
+            --slime-green: #38b000;
+            --bone-white: #ffffff;
+            --blood-red: #ff0054;
+            --spider-black: #333333;
+        }
+
+        body {
+            background-color: var(--night-sky);
+            color: var(--pumpkin-orange);
+            font-family: 'Creepster', cursive;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            padding: 0;
+            margin: 0;
+            min-height: 100vh;
+            overflow-x: hidden;
+            user-select: none;
+        }
+
+        #game-container {
+            width: 98vw;
+            max-width: 700px;
+            margin: 1rem auto;
+            border: 4px solid var(--blood-red);
+            border-radius: 20px;
+            box-shadow: 0 0 40px rgba(255, 0, 84, 0.7);
+            background-color: #0d1117;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        #gameCanvas {
+            width: 100%;
+            display: block;
+            background: linear-gradient(180deg, var(--deep-purple) 0%, var(--night-sky) 80%);
+            touch-action: none;
+        }
+
+        #game-info {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.5rem 1rem;
+            background-color: var(--deep-purple);
+            font-size: 1.8rem;
+            font-weight: 700;
+        }
+
+        #timer-display {
+            transition: color 0.5s;
+        }
+
+        .control-button {
+            padding: 10px 15px;
+            margin: 5px;
+            background: var(--pumpkin-orange);
+            color: var(--night-sky);
+            font-weight: 700;
+            border: 3px solid var(--blood-red);
+            border-radius: 8px;
+            box-shadow: 0 4px 0 var(--blood-red);
+            transition: all 0.15s ease;
+            font-size: 1rem;
+            -webkit-tap-highlight-color: transparent;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            line-height: 1;
+        }
+
+        .control-button:active {
+            box-shadow: 0 1px 0 var(--blood-red);
+            transform: translateY(3px);
+            background: #e68a00;
+        }
+        
+        #mobile-controls {
+            display: grid;
+            grid-template-areas:
+                ". up ."
+                "left . right"
+                ". down .";
+            width: 100%;
+            max-width: 300px;
+            margin: 10px auto;
+            padding: 10px;
+        }
+
+        #up-btn { grid-area: up; }
+        #down-btn { grid-area: down; }
+        #left-btn { grid-area: left; }
+        #right-btn { grid-area: right; }
+
+        @media (min-width: 600px) {
+            #mobile-controls {
+                display: none;
+            }
+        }
+        
+        /* Message Box Styling */
+        #message-box {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 2.5rem;
+            background-color: var(--night-sky);
+            border: 4px solid var(--slime-green);
+            border-radius: 15px;
+            box-shadow: 0 0 50px var(--slime-green);
+            z-index: 100;
+            text-align: center;
+            display: none;
+            max-width: 90vw;
+            animation: glow-pulse 2s infinite alternate;
+        }
+
+        #message-box h2 {
+            font-size: 3.5rem;
+            color: var(--slime-green);
+            margin-bottom: 0.5rem;
+        }
+
+        #message-box p {
+            font-size: 1.6rem;
+            margin-bottom: 2rem;
+            color: var(--bone-white);
+        }
+
+        #restart-button {
+            background: linear-gradient(145deg, var(--blood-red), #e6004c);
+            color: var(--bone-white);
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 1.2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            cursor: pointer;
+        }
+        
+        @keyframes glow-pulse {
+            from { box-shadow: 0 0 20px var(--slime-green); }
+            to { box-shadow: 0 0 35px var(--slime-green); }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <div id="game-info">
+            <div id="level-display">Haunted Level: 1</div>
+            <div id="count-display">Candy Count: 0 / 20</div>
+            <div id="timer-display">Time: 15s</div> 
+        </div>
+        <canvas id="gameCanvas"></canvas>
+    </div>
+
+    <div id="mobile-controls">
+        <button class="control-button" id="up-btn">↑</button>
+        <button class="control-button" id="left-btn">←</button>
+        <button class="control-button" id="right-btn">→</button>
+        <button class="control-button" id="down-btn">↓</button>
+    </div>
+
+    <!-- The Game Over/Level Complete Message Box -->
+    <div id="message-box">
+        <h2 id="message-title">Trick or Treat!</h2>
+        <p id="message-text">Collect 20 candies to survive the first haunt!</p>
+        <button class="control-button" id="restart-button">Start the Haul</button>
+    </div>
+
+    <script>
+        // --- Core Game Setup ---
+        const gameCanvas = document.getElementById('gameCanvas');
+        const ctx = gameCanvas.getContext('2d');
+        let animationFrameId;
+
+        // --- Game Constants and State ---
+        const CANDY_GOAL = 20;
+        const PLAYER_SIZE = 25;
+        const CANDY_RADIUS = 10;
+        const SPIDER_RADIUS = 15; // New constant for spider size
+        const INITIAL_CANDY_COUNT = 30; 
+        const INITIAL_TIME_LIMIT = 15; 
+        const TIME_REDUCTION_PER_LEVEL = 2;
+        const STUN_DURATION = 2000; // 2 seconds in milliseconds
+        
+        let player;
+        let candy = [];
+        let spiders = []; // New array for spiders
+        let candyCollected = 0;
+        let hauntedLevel = 1;
+        let gameRunning = false;
+        
+        // Timer variables
+        let timeLeft = INITIAL_TIME_LIMIT;
+        let timerIntervalId;
+
+        // Stun variables
+        let isStunned = false;
+        let stunEndTime = 0;
+        
+        let keys = {
+            ArrowUp: false, w: false,
+            ArrowDown: false, s: false,
+            ArrowLeft: false, a: false,
+            ArrowRight: false, d: false,
+        };
+        
+        // --- DOM Elements (Already set up) ---
+        const countDisplay = document.getElementById('count-display');
+        const levelDisplay = document.getElementById('level-display');
+        const messageBox = document.getElementById('message-box');
+        const messageTitle = document.getElementById('message-title');
+        const messageText = document.getElementById('message-text');
+        const restartButton = document.getElementById('restart-button');
+        const timerDisplay = document.getElementById('timer-display'); 
+
+        // --- Utility Functions ---
+
+        function dist(x1, y1, x2, y2) {
+            return Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+        }
+
+        function setupCanvas() {
+            const container = document.getElementById('game-container');
+            const containerWidth = container.clientWidth;
+            const width = Math.min(containerWidth, 700);
+            const height = width * (3 / 4); 
+            gameCanvas.width = width;
+            gameCanvas.height = height;
+        }
+
+        function varToString(cssVar) {
+            return getComputedStyle(document.documentElement).getPropertyValue(cssVar).trim();
+        }
+        
+        // --- Timer Functions ---
+        
+        function updateTimerDisplay() {
+            timerDisplay.textContent = `Time: ${timeLeft}s`;
+            // Red warning color when time is critical or player is stunned
+            if (timeLeft <= 5 && timeLeft > 0 || isStunned) {
+                timerDisplay.style.color = varToString('--blood-red');
+            } else {
+                timerDisplay.style.color = varToString('--pumpkin-orange');
+            }
+        }
+        
+        function startTimer() {
+            if (timerIntervalId) {
+                clearInterval(timerIntervalId);
+            }
+            
+            const timeReduction = (hauntedLevel - 1) * TIME_REDUCTION_PER_LEVEL;
+            const baseTime = INITIAL_TIME_LIMIT - timeReduction;
+            timeLeft = Math.max(5, baseTime); // Minimum time limit is 5 seconds
+            updateTimerDisplay();
+
+            timerIntervalId = setInterval(() => {
+                if (!gameRunning) {
+                    clearInterval(timerIntervalId);
+                    return;
+                }
+                
+                // Only tick down if not stunned
+                if (!isStunned) {
+                    timeLeft--;
+                }
+                updateTimerDisplay();
+
+                if (timeLeft <= 0) {
+                    clearInterval(timerIntervalId);
+                    gameOver(true); 
+                }
+            }, 1000);
+        }
+
+        // --- Game Object Classes ---
+
+        class Player {
+            constructor() {
+                this.x = gameCanvas.width / 2;
+                this.y = gameCanvas.height / 2;
+                this.radius = PLAYER_SIZE / 2;
+                this.speed = 3.5;
+            }
+
+            draw() {
+                let bucketColor = varToString('--pumpkin-orange');
+                let faceColor = varToString('--night-sky');
+                let faceOutline = varToString('--night-sky');
+
+                // Visual cue for being stunned
+                if (isStunned) {
+                    bucketColor = varToString('--blood-red');
+                    faceColor = varToString('--bone-white');
+                    faceOutline = varToString('--bone-white');
+                }
+
+                ctx.fillStyle = bucketColor;
+                ctx.strokeStyle = faceOutline;
+                ctx.lineWidth = 3;
+                
+                // Bucket Body
+                ctx.beginPath();
+                ctx.rect(this.x - this.radius, this.y - this.radius * 1.5, this.radius * 2, this.radius * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // Bucket handle (arc)
+                ctx.beginPath();
+                ctx.arc(this.x, this.y - this.radius * 1.5, this.radius * 1.5, Math.PI, 2 * Math.PI);
+                ctx.stroke();
+
+                // Spooky face on bucket
+                ctx.fillStyle = faceColor;
+                ctx.fillRect(this.x - 7, this.y - 12, 3, 3); // Left eye
+                ctx.fillRect(this.x + 4, this.y - 12, 3, 3); // Right eye
+                ctx.fillRect(this.x - 5, this.y - 6, 10, 2); // Mouth
+
+            }
+
+            update() {
+                // DO NOT allow movement if stunned
+                if (isStunned) {
+                    return;
+                }
+
+                let dx = 0;
+                let dy = 0;
+
+                if (keys.ArrowUp || keys.w) dy -= this.speed;
+                if (keys.ArrowDown || keys.s) dy += this.speed;
+                if (keys.ArrowLeft || keys.a) dx -= this.speed;
+                if (keys.ArrowRight || keys.d) dx += this.speed;
+
+                this.x += dx;
+                this.y += dy;
+
+                // Clamp to canvas boundaries
+                this.x = Math.max(this.radius, Math.min(this.x, gameCanvas.width - this.radius));
+                this.y = Math.max(this.radius, Math.min(this.y, gameCanvas.height - this.radius));
+            }
+        }
+
+        class Candy {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.radius = CANDY_RADIUS;
+                this.vx = (Math.random() - 0.5) * 1.0; 
+                this.vy = (Math.random() - 0.5) * 1.0;
+                this.type = Math.floor(Math.random() * 3); 
+                this.color = ['#ff6f61', '#f9c74f', '#4cc9f0', '#b5179e', '#59d6e0'][Math.floor(Math.random() * 5)]; 
+                this.rotation = Math.random() * Math.PI * 2;
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.rotation);
+                
+                ctx.fillStyle = this.color;
+                ctx.strokeStyle = varToString('--bone-white');
+                ctx.lineWidth = 1;
+
+                if (this.type === 0) { // Simple circle (gumball)
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.radius, 0, 2 * Math.PI);
+                    ctx.fill();
+                    ctx.stroke();
+                } else if (this.type === 1) { // Square (chocolate)
+                    ctx.fillRect(-this.radius, -this.radius, this.radius * 2, this.radius * 2);
+                    ctx.strokeRect(-this.radius, -this.radius, this.radius * 2, this.radius * 2);
+                } else { // Wrapped candy
+                    ctx.fillRect(-this.radius * 1.5, -this.radius * 0.5, this.radius * 3, this.radius);
+                    ctx.beginPath();
+                    ctx.moveTo(-this.radius * 1.5, -this.radius * 0.5);
+                    ctx.lineTo(-this.radius * 2, -this.radius);
+                    ctx.lineTo(-this.radius * 2, this.radius);
+                    ctx.lineTo(-this.radius * 1.5, this.radius * 0.5);
+                    ctx.fill();
+                    ctx.stroke();
+                }
+
+                ctx.restore();
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.rotation += 0.01; 
+
+                // Wrap around screen edges
+                if (this.x < -this.radius) this.x = gameCanvas.width + this.radius;
+                if (this.x > gameCanvas.width + this.radius) this.x = -this.radius;
+                if (this.y < -this.radius) this.y = gameCanvas.height + this.radius;
+                if (this.y > gameCanvas.height + this.radius) this.y = -this.radius;
+            }
+        }
+
+        class Spider {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.radius = SPIDER_RADIUS;
+                this.vx = (Math.random() - 0.5) * 0.8; 
+                this.vy = (Math.random() - 0.5) * 0.8;
+                this.color = varToString('--spider-black'); 
+                this.legWiggle = Math.random() * Math.PI * 2;
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                
+                // Draw 8 simple legs
+                ctx.strokeStyle = this.color;
+                ctx.lineWidth = 2;
+                const legLength = this.radius * 1.5;
+                for (let i = 0; i < 8; i++) {
+                    const angle = (i / 8) * Math.PI * 2 + Math.sin(this.legWiggle * 0.2 + i) * 0.1;
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+                    const endX = legLength * Math.cos(angle);
+                    const endY = legLength * Math.sin(angle);
+                    ctx.lineTo(endX, endY);
+                    ctx.stroke();
+                }
+
+                // Draw body
+                ctx.fillStyle = this.color;
+                ctx.strokeStyle = varToString('--slime-green');
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // Draw glowy eyes
+                ctx.fillStyle = varToString('--slime-green');
+                ctx.fillRect(-3, -3, 2, 2); 
+                ctx.fillRect(1, -3, 2, 2); 
+
+                ctx.restore();
+            }
+            
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.legWiggle += 0.1;
+
+                // Wrap around screen edges
+                if (this.x < -this.radius) this.x = gameCanvas.width + this.radius;
+                if (this.x > gameCanvas.width + this.radius) this.x = -this.radius;
+                if (this.y < -this.radius) this.y = gameCanvas.height + this.radius;
+                if (this.y > gameCanvas.height + this.radius) this.y = -this.radius;
+            }
+        }
+
+
+        // --- Game Logic ---
+
+        function initGame() {
+            setupCanvas();
+            // Removed audio stop/start
+            player = new Player();
+            candy = [];
+            spiders = [];
+            candyCollected = 0;
+            hauntedLevel = 1; 
+            gameRunning = true;
+            isStunned = false; // Reset stun state
+            stunEndTime = 0;
+            messageBox.style.display = 'none';
+            
+            spawnCandy(INITIAL_CANDY_COUNT);
+            spawnSpiders(2); // Start with 2 spiders
+            startTimer();
+            updateInfoDisplay();
+
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+            gameLoop();
+        }
+        
+        function nextLevel() {
+            hauntedLevel++;
+            const newCandyCount = INITIAL_CANDY_COUNT + (hauntedLevel * 3); 
+            player.x = gameCanvas.width / 2;
+            player.y = gameCanvas.height / 2;
+            
+            candy = [];
+            spiders = [];
+            candyCollected = 0;
+            
+            spawnCandy(newCandyCount);
+            spawnSpiders(3); // 3 spiders from level 2 onwards
+            
+            updateInfoDisplay();
+            isStunned = false; // Reset stun state
+            stunEndTime = 0;
+            startTimer(); 
+            gameRunning = true;
+            messageBox.style.display = 'none';
+
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+            gameLoop();
+        }
+
+        function spawnCandy(count) {
+            for (let i = 0; i < count; i++) {
+                const x = Math.random() * gameCanvas.width;
+                const y = Math.random() * gameCanvas.height;
+                candy.push(new Candy(x, y));
+            }
+        }
+        
+        function spawnSpiders(count) {
+            for (let i = 0; i < count; i++) {
+                const x = Math.random() * gameCanvas.width;
+                const y = Math.random() * gameCanvas.height;
+                spiders.push(new Spider(x, y));
+            }
+        }
+
+        function updateInfoDisplay() {
+            levelDisplay.textContent = `Haunted Level: ${hauntedLevel}`;
+            countDisplay.textContent = `Candy Count: ${candyCollected} / ${CANDY_GOAL}`;
+        }
+
+        function levelComplete() {
+            gameRunning = false;
+            cancelAnimationFrame(animationFrameId);
+            clearInterval(timerIntervalId);
+            
+            messageTitle.textContent = "HAUL COMPLETE!";
+            messageText.textContent = `You stuffed your bucket with 20 pieces! Ready for the next Haunted Level ${hauntedLevel + 1}?`;
+            restartButton.textContent = 'Next Haunt';
+            restartButton.removeEventListener('click', initGame);
+            restartButton.addEventListener('click', nextLevel);
+            messageBox.style.display = 'block';
+        }
+        
+        function gameOver(timedOut = false) {
+            gameRunning = false;
+            cancelAnimationFrame(animationFrameId);
+            clearInterval(timerIntervalId);
+            // Removed audio stop
+            
+            messageTitle.textContent = "GAME OVER!";
+            restartButton.textContent = 'Retry the Haul';
+            restartButton.removeEventListener('click', nextLevel);
+            restartButton.addEventListener('click', initGame);
+
+            if (timedOut) {
+                 messageText.textContent = `Time ran out! You got spooked on Level ${hauntedLevel} with only ${candyCollected} pieces. Better luck next time!`;
+                 messageBox.style.borderColor = varToString('--blood-red');
+            } else {
+                 messageText.textContent = `You finished Level ${hauntedLevel}, but the spirits demand a retry!`;
+                 messageBox.style.borderColor = varToString('--slime-green');
+            }
+            
+            messageBox.style.display = 'block';
+        }
+
+        function update() {
+            if (!gameRunning) return;
+
+            // 1. Check/End Stun State
+            if (isStunned && Date.now() >= stunEndTime) {
+                isStunned = false;
+                // Removed ready signal audio
+            }
+
+            // 2. Update Player position (handles stun check internally)
+            player.update();
+
+            // 3. Update Candy and Spider positions
+            candy.forEach(c => c.update());
+            spiders.forEach(s => s.update()); 
+            
+            // 4. Check for Spider Collision
+            if (!isStunned) {
+                for (let i = spiders.length - 1; i >= 0; i--) {
+                    const s = spiders[i];
+                    if (dist(player.x, player.y, s.x, s.y) < player.radius + s.radius) {
+                        // Collision! Stun the player
+                        isStunned = true;
+                        stunEndTime = Date.now() + STUN_DURATION; // 2 second stun
+                        // Removed impact sound
+                        updateTimerDisplay(); // Update display for red stun color
+                        break; // Only get stunned once per frame
+                    }
+                }
+            }
+
+            // 5. Check Collection (Player vs Candy)
+            for (let i = candy.length - 1; i >= 0; i--) {
+                const c = candy[i];
+                if (dist(player.x, player.y, c.x, c.y) < player.radius + c.radius) {
+                    // Candy collected!
+                    candyCollected++;
+                    updateInfoDisplay();
+
+                    candy.splice(i, 1);
+                    // Removed candy collection sound
+                }
+            }
+
+            // 6. Check for Level Completion
+            if (candyCollected >= CANDY_GOAL) {
+                levelComplete();
+                return;
+            }
+            
+            // 7. Respawn candy if running low
+            if (candy.length < 10) {
+                spawnCandy(Math.floor(Math.random() * 5) + 1);
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
+            
+            spiders.forEach(s => s.draw()); // Draw spiders first so candy overlaps them slightly
+            candy.forEach(c => c.draw());
+            player.draw();
+        }
+
+        function gameLoop() {
+            if (!gameRunning) return;
+
+            update();
+            draw();
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        // --- Event Handlers ---
+
+        function handleKeyDown(event) {
+            const key = event.key.toLowerCase();
+            if (['arrowup', 'w', 'arrowdown', 's', 'arrowleft', 'a', 'arrowright', 'd'].includes(key)) {
+                event.preventDefault(); 
+                keys[key] = true;
+            }
+        }
+
+        function handleKeyUp(event) {
+            const key = event.key.toLowerCase();
+            keys[key] = false;
+        }
+
+        function handleResize() {
+            setupCanvas();
+            if (player) {
+                player.x = gameCanvas.width / 2;
+                player.y = gameCanvas.height / 2;
+            }
+            if (gameRunning) {
+                 draw();
+            }
+        }
+        
+        function setupTouchControl(id, keyName) {
+            const btn = document.getElementById(id);
+            ['touchstart', 'mousedown'].forEach(event => btn.addEventListener(event, (e) => { e.preventDefault(); keys[keyName] = true; }, { passive: false }));
+            ['touchend', 'mouseup', 'touchcancel'].forEach(event => btn.addEventListener(event, (e) => { e.preventDefault(); keys[keyName] = false; }));
+        }
+
+        // --- Initialization ---
+
+        window.addEventListener('load', () => {
+            // Setup listeners
+            document.addEventListener('keydown', handleKeyDown);
+            document.addEventListener('keyup', handleKeyUp);
+            window.addEventListener('resize', handleResize);
+            
+            // Setup touch controls
+            setupTouchControl('up-btn', 'w');
+            setupTouchControl('down-btn', 's');
+            setupTouchControl('left-btn', 'a');
+            setupTouchControl('right-btn', 'd');
+            
+            // Initial setup and listener for starting the first game
+            restartButton.addEventListener('click', initGame); 
+
+            // Show initial message
+            updateTimerDisplay(); 
+            messageTitle.textContent = "Welcome to the Haunted Haul!";
+            messageText.textContent = `Quick! Grab 20 pieces of candy in 15 seconds! Watch out for the giant spiders—they'll stun you for 2 seconds if you touch them!`;
+            restartButton.textContent = 'Start the Haul';
+            messageBox.style.display = 'block';
+        });
+
+    </script>
+</body>
+</html>
