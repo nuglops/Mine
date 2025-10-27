@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sleepy Sheep Catcher</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --night-sky: #1a237e;
+            --deep-purple: #3f51b5;
+            --moon-glow: #e0f7fa;
+            --sheep-white: #ffffff;
+            --accent-pink: #ff4081;
+        }
+
+        body {
+            background-color: var(--night-sky);
+            color: var(--moon-glow);
+            font-family: 'Caveat', cursive;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            padding: 0;
+            margin: 0;
+            min-height: 100vh;
+            overflow-x: hidden;
+            user-select: none;
+        }
+
+        #game-container {
+            width: 98vw;
+            max-width: 700px;
+            margin: 1rem auto;
+            border: 4px solid var(--deep-purple);
+            border-radius: 20px;
+            box-shadow: 0 0 40px rgba(63, 81, 181, 0.7);
+            background-color: #0d1117;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        #gameCanvas {
+            width: 100%;
+            display: block;
+            background: linear-gradient(180deg, var(--deep-purple) 0%, var(--night-sky) 80%);
+            touch-action: none; /* Helps prevent default mobile scrolling */
+        }
+
+        #game-info {
+            display: flex;
+            justify-content: space-between; /* Changed to space-between for better 3-item layout */
+            padding: 0.5rem 1rem;
+            background-color: var(--deep-purple);
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .control-button {
+            padding: 10px 15px;
+            margin: 5px;
+            background: var(--accent-pink);
+            color: var(--sheep-white);
+            font-weight: 700;
+            border: none;
+            border-radius: 8px;
+            box-shadow: 0 3px 5px rgba(0, 0, 0, 0.3);
+            transition: all 0.15s ease;
+            font-size: 1rem;
+            -webkit-tap-highlight-color: transparent;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            line-height: 1;
+        }
+
+        .control-button:active {
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+            transform: translateY(2px);
+            background: #e91e63;
+        }
+        
+        #mobile-controls {
+            display: grid;
+            grid-template-areas:
+                ". up ."
+                "left . right"
+                ". down .";
+            width: 100%;
+            max-width: 300px;
+            margin: 10px auto;
+            padding: 10px;
+        }
+
+        #up-btn { grid-area: up; }
+        #down-btn { grid-area: down; }
+        #left-btn { grid-area: left; }
+        #right-btn { grid-area: right; }
+
+        /* Hide controls on desktop */
+        @media (min-width: 600px) {
+            #mobile-controls {
+                display: none;
+            }
+        }
+        
+        /* Message Box Styling (The sleepy success screen) */
+        #message-box {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 2.5rem;
+            background-color: var(--night-sky);
+            border: 4px solid var(--moon-glow);
+            border-radius: 15px;
+            box-shadow: 0 0 50px var(--moon-glow);
+            z-index: 100;
+            text-align: center;
+            display: none;
+            max-width: 90vw;
+            animation: pulse-glow 2s infinite alternate;
+        }
+
+        #message-box h2 {
+            font-size: 3rem;
+            color: var(--moon-glow);
+            margin-bottom: 0.5rem;
+        }
+
+        #message-box p {
+            font-size: 1.5rem;
+            margin-bottom: 2rem;
+            color: #b3e5fc;
+        }
+
+        #restart-button {
+            background: linear-gradient(145deg, var(--accent-pink), #e91e63);
+            color: var(--sheep-white);
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 1.2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            cursor: pointer;
+        }
+        
+        @keyframes pulse-glow {
+            from { box-shadow: 0 0 20px var(--moon-glow); }
+            to { box-shadow: 0 0 35px var(--moon-glow); }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <div id="game-info">
+            <div id="level-display">Dream Level: 1</div>
+            <div id="count-display">Sheep Count: 0 / 10</div>
+            <!-- NEW: Timer Display -->
+            <div id="timer-display">Time: 30s</div> 
+        </div>
+        <canvas id="gameCanvas"></canvas>
+    </div>
+
+    <div id="mobile-controls">
+        <button class="control-button" id="up-btn">↑</button>
+        <button class="control-button" id="left-btn">←</button>
+        <button class="control-button" id="right-btn">→</button>
+        <button class="control-button" id="down-btn">↓</button>
+    </div>
+
+    <!-- The Sweet Dreams Message Box -->
+    <div id="message-box">
+        <h2 id="message-title">Sweet Dreams!</h2>
+        <p id="message-text">You've reached level 1. Time to drift off...</p>
+        <button class="control-button" id="restart-button">Count More Sheep</button>
+    </div>
+
+    <script>
+        // Global canvas context and state
+        const gameCanvas = document.getElementById('gameCanvas');
+        const ctx = gameCanvas.getContext('2d');
+        let animationFrameId;
+
+        // Game Constants and State
+        const SHEEP_GOAL = 10;
+        const PLAYER_SIZE = 20;
+        const SHEEP_RADIUS = 12;
+        const INITIAL_SHEEP_COUNT = 15; // More sheep than the goal to make it a chase
+        const INITIAL_TIME_LIMIT = 30; // seconds
+
+        let player;
+        let sheep = [];
+        let sheepCollected = 0;
+        let dreamLevel = 1;
+        let gameRunning = false;
+        
+        // NEW: Timer variables
+        let timeLeft = INITIAL_TIME_LIMIT;
+        let timerIntervalId;
+        
+        let keys = {
+            ArrowUp: false, w: false,
+            ArrowDown: false, s: false,
+            ArrowLeft: false, a: false,
+            ArrowRight: false, d: false,
+        };
+
+        // DOM Elements
+        const countDisplay = document.getElementById('count-display');
+        const levelDisplay = document.getElementById('level-display');
+        const messageBox = document.getElementById('message-box');
+        const messageTitle = document.getElementById('message-title');
+        const messageText = document.getElementById('message-text');
+        const restartButton = document.getElementById('restart-button');
+        // NEW: Timer DOM Element
+        const timerDisplay = document.getElementById('timer-display'); 
+
+        // --- Utility Functions ---
+
+        /**
+         * Calculates the distance between two points.
+         */
+        function dist(x1, y1, x2, y2) {
+            return Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+        }
+
+        /**
+         * Sets up the canvas dimensions to be responsive.
+         */
+        function setupCanvas() {
+            const container = document.getElementById('game-container');
+            const containerWidth = container.clientWidth;
+            
+            // Maintain a 4:3 aspect ratio
+            const width = Math.min(containerWidth, 700);
+            const height = width * (3 / 4); 
+
+            gameCanvas.width = width;
+            gameCanvas.height = height;
+        }
+
+        /**
+         * Converts CSS variable name to its value.
+         */
+        function varToString(cssVar) {
+            return getComputedStyle(document.documentElement).getPropertyValue(cssVar).trim();
+        }
+        
+        // --- Timer Functions (NEW) ---
+        
+        /**
+         * Updates the timer display and applies low-time warning color.
+         */
+        function updateTimerDisplay() {
+            timerDisplay.textContent = `Time: ${timeLeft}s`;
+            // Change color when low on time
+            if (timeLeft <= 5 && timeLeft > 0) {
+                timerDisplay.style.color = varToString('--accent-pink');
+            } else {
+                timerDisplay.style.color = varToString('--moon-glow');
+            }
+        }
+        
+        /**
+         * Starts the level timer with a reduced time limit for higher levels.
+         */
+        function startTimer() {
+            // Clear any existing timer
+            if (timerIntervalId) {
+                clearInterval(timerIntervalId);
+            }
+            
+            // Time limit decreases by 2 seconds per level, minimum 10 seconds.
+            const timeReduction = (dreamLevel - 1) * 2;
+            const baseTime = INITIAL_TIME_LIMIT - timeReduction;
+            timeLeft = Math.max(10, baseTime); // Set minimum time limit to 10 seconds
+            updateTimerDisplay();
+
+            timerIntervalId = setInterval(() => {
+                if (!gameRunning) {
+                    clearInterval(timerIntervalId);
+                    return;
+                }
+                
+                timeLeft--;
+                updateTimerDisplay();
+
+                if (timeLeft <= 0) {
+                    clearInterval(timerIntervalId);
+                    gameOver(true); // Pass flag for "timed out" game over
+                }
+            }, 1000);
+        }
+
+
+        // --- Game Object Classes (Unchanged from previous version) ---
+
+        class Player {
+            constructor() {
+                this.x = gameCanvas.width / 2;
+                this.y = gameCanvas.height / 2;
+                this.radius = PLAYER_SIZE / 2;
+                this.speed = 2.5; // Slow and floaty movement
+            }
+
+            // Draw the player as a peaceful crescent moon
+            draw() {
+                ctx.fillStyle = varToString('--moon-glow');
+                ctx.strokeStyle = varToString('--accent-pink');
+                ctx.lineWidth = 2;
+                
+                ctx.beginPath();
+                // Outer arc (full circle)
+                ctx.arc(this.x, this.y, this.radius, 0, 2 * Math.PI);
+                ctx.fill();
+
+                // Draw a simple star inside
+                ctx.fillStyle = 'yellow';
+                ctx.font = '12px Caveat';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('⭐', this.x, this.y);
+            }
+
+            // Update position based on key presses
+            update() {
+                let dx = 0;
+                let dy = 0;
+
+                if (keys.ArrowUp || keys.w) dy -= this.speed;
+                if (keys.ArrowDown || keys.s) dy += this.speed;
+                if (keys.ArrowLeft || keys.a) dx -= this.speed;
+                if (keys.ArrowRight || keys.d) dx += this.speed;
+
+                // Move
+                this.x += dx;
+                this.y += dy;
+
+                // Clamp to canvas boundaries
+                this.x = Math.max(this.radius, Math.min(this.x, gameCanvas.width - this.radius));
+                this.y = Math.max(this.radius, Math.min(this.y, gameCanvas.height - this.radius));
+            }
+        }
+
+        class Sheep {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.radius = SHEEP_RADIUS;
+                this.vx = (Math.random() - 0.5) * 0.5; // Very slow drift
+                this.vy = (Math.random() - 0.5) * 0.5;
+                this.wobble = Math.random() * Math.PI * 2; // For visual effect
+            }
+
+            // Draw the sheep as a fluffy white ball
+            draw() {
+                ctx.fillStyle = varToString('--sheep-white');
+                ctx.strokeStyle = varToString('--moon-glow');
+                ctx.lineWidth = 1;
+                
+                // Draw a simple, fluffy circle
+                ctx.beginPath();
+                for (let i = 0; i < 8; i++) {
+                    const angle = i * Math.PI / 4 + Math.sin(this.wobble + i) * 0.1;
+                    const r = this.radius * (1 + Math.sin(this.wobble * 0.1 + i) * 0.1);
+                    const px = this.x + r * Math.cos(angle);
+                    const py = this.y + r * Math.sin(angle);
+                    if (i === 0) {
+                        ctx.moveTo(px, py);
+                    } else {
+                        ctx.lineTo(px, py);
+                    }
+                }
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                // Draw a tiny sleepy face
+                ctx.fillStyle = 'black';
+                ctx.fillRect(this.x - 3, this.y - 1, 2, 2);
+                ctx.fillRect(this.x + 1, this.y - 1, 2, 2);
+            }
+
+            // Update position and wrap around screen
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.wobble += 0.05; // Make it wobble gently
+
+                // Wrap around screen edges
+                if (this.x < -this.radius) this.x = gameCanvas.width + this.radius;
+                if (this.x > gameCanvas.width + this.radius) this.x = -this.radius;
+                if (this.y < -this.radius) this.y = gameCanvas.height + this.radius;
+                if (this.y > gameCanvas.height + this.radius) this.y = -this.radius;
+            }
+        }
+
+        // --- Game Logic ---
+
+        /**
+         * Initializes a new game state or proceeds to the next level.
+         */
+        function initGame() {
+            setupCanvas();
+            player = new Player();
+            sheep = [];
+            sheepCollected = 0;
+            dreamLevel = 1; // Reset level for new game
+            gameRunning = true;
+            messageBox.style.display = 'none';
+            
+            spawnSheep(INITIAL_SHEEP_COUNT);
+            startTimer(); // Start the timer
+            updateInfoDisplay();
+
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+            gameLoop();
+        }
+        
+        /**
+         * Starts the next dream level.
+         */
+        function nextLevel() {
+            dreamLevel++;
+            const newSheepCount = INITIAL_SHEEP_COUNT + (dreamLevel * 2);
+            // Move player to center for new level
+            player.x = gameCanvas.width / 2;
+            player.y = gameCanvas.height / 2;
+            
+            sheep = [];
+            sheepCollected = 0;
+            spawnSheep(newSheepCount);
+            
+            updateInfoDisplay();
+            startTimer(); // Start the timer for the new level
+            gameRunning = true;
+            messageBox.style.display = 'none';
+
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+            gameLoop();
+        }
+
+        /**
+         * Creates sheep scattered randomly across the canvas.
+         * @param {number} count The number of sheep to spawn.
+         */
+        function spawnSheep(count) {
+            for (let i = 0; i < count; i++) {
+                const x = Math.random() * gameCanvas.width;
+                const y = Math.random() * gameCanvas.height;
+                sheep.push(new Sheep(x, y));
+            }
+        }
+
+        /**
+         * Updates the score and level displays.
+         */
+        function updateInfoDisplay() {
+            levelDisplay.textContent = `Dream Level: ${dreamLevel}`;
+            countDisplay.textContent = `Sheep Count: ${sheepCollected} / ${SHEEP_GOAL}`;
+        }
+
+        /**
+         * Handles the level success state, showing the "Sweet Dreams" box.
+         */
+        function levelComplete() {
+            gameRunning = false;
+            cancelAnimationFrame(animationFrameId);
+            clearInterval(timerIntervalId); // Stop the timer
+            
+            messageTitle.textContent = "Sweet Dreams!";
+            messageText.textContent = `You counted ${SHEEP_GOAL} sheep in time! Ready to drift to Dream Level ${dreamLevel + 1}?`;
+            restartButton.textContent = 'Continue Dreaming';
+            restartButton.removeEventListener('click', initGame);
+            restartButton.addEventListener('click', nextLevel);
+            messageBox.style.display = 'block';
+        }
+        
+        /**
+         * Handles the game over state, showing the message box.
+         * @param {boolean} timedOut True if game over was due to time running out.
+         */
+        function gameOver(timedOut = false) {
+            gameRunning = false;
+            cancelAnimationFrame(animationFrameId);
+            clearInterval(timerIntervalId); // Stop the timer
+            
+            messageTitle.textContent = "You Drifted Off!";
+            restartButton.textContent = 'Try Again';
+            restartButton.removeEventListener('click', nextLevel);
+            restartButton.addEventListener('click', initGame);
+
+            if (timedOut) {
+                 messageText.textContent = `The sheep were too fast! You ran out of time on Dream Level ${dreamLevel} and only counted ${sheepCollected} sheep.`;
+                 messageBox.style.borderColor = varToString('--accent-pink'); // Use a slightly different color for loss
+            } else {
+                 messageText.textContent = `A disruption woke you up! You finished on Dream Level ${dreamLevel}.`;
+                 messageBox.style.borderColor = varToString('--moon-glow');
+            }
+            
+            messageBox.style.display = 'block';
+        }
+
+
+        /**
+         * Main game update logic.
+         */
+        function update() {
+            if (!gameRunning) return;
+
+            // 1. Update Player position
+            player.update();
+
+            // 2. Update Sheep positions
+            sheep.forEach(s => s.update());
+
+            // 3. Check Collection (Player vs Sheep)
+            for (let i = sheep.length - 1; i >= 0; i--) {
+                const s = sheep[i];
+                if (dist(player.x, player.y, s.x, s.y) < player.radius + s.radius) {
+                    // Sheep collected!
+                    sheepCollected++;
+                    updateInfoDisplay();
+
+                    // Remove the collected sheep
+                    sheep.splice(i, 1);
+                }
+            }
+
+            // 4. Check for Level Completion
+            if (sheepCollected >= SHEEP_GOAL) {
+                levelComplete();
+                return;
+            }
+            
+            // 5. If sheep run out before goal, respawn a few more gently
+            if (sheep.length < 5) {
+                spawnSheep(Math.floor(Math.random() * 3) + 1);
+            }
+        }
+
+        /**
+         * Main game drawing logic.
+         */
+        function draw() {
+            // Clear the canvas (The Night Sky)
+            ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
+            
+            // Draw all Sheep
+            sheep.forEach(s => s.draw());
+
+            // Draw Player
+            player.draw();
+        }
+
+        /**
+         * The main game loop function.
+         */
+        function gameLoop() {
+            if (!gameRunning) return;
+
+            update();
+            draw();
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        // --- Event Handlers (Unchanged) ---
+
+        function handleKeyDown(event) {
+            const key = event.key.toLowerCase();
+            if (['arrowup', 'w', 'arrowdown', 's', 'arrowleft', 'a', 'arrowright', 'd'].includes(key)) {
+                event.preventDefault(); 
+                keys[key] = true;
+            }
+        }
+
+        function handleKeyUp(event) {
+            const key = event.key.toLowerCase();
+            keys[key] = false;
+        }
+
+        function handleResize() {
+            setupCanvas();
+            if (player) {
+                player.x = gameCanvas.width / 2;
+                player.y = gameCanvas.height / 2;
+            }
+            if (gameRunning) {
+                 draw();
+            }
+        }
+        
+        // Helper function for touch control setup
+        function setupTouchControl(id, keyName) {
+            const btn = document.getElementById(id);
+            ['touchstart', 'mousedown'].forEach(event => btn.addEventListener(event, (e) => { e.preventDefault(); keys[keyName] = true; }, { passive: false }));
+            ['touchend', 'mouseup', 'touchcancel'].forEach(event => btn.addEventListener(event, (e) => { e.preventDefault(); keys[keyName] = false; }));
+        }
+
+        // --- Initialization ---
+
+        window.addEventListener('load', () => {
+            // Setup listeners
+            document.addEventListener('keydown', handleKeyDown);
+            document.addEventListener('keyup', handleKeyUp);
+            window.addEventListener('resize', handleResize);
+            
+            // Setup touch controls
+            setupTouchControl('up-btn', 'w');
+            setupTouchControl('down-btn', 's');
+            setupTouchControl('left-btn', 'a');
+            setupTouchControl('right-btn', 'd');
+            
+            // Initial setup and listener for starting the first game
+            restartButton.addEventListener('click', initGame); 
+
+            // Show a gentle start message first
+            messageTitle.textContent = "Welcome to Dreamland";
+            messageText.textContent = "Gently move the glowing star to count 10 white sheep. Now with a time limit that shrinks each level!";
+            restartButton.textContent = 'Begin Counting';
+            messageBox.style.display = 'block';
+        });
+
+    </script>
+</body>
+</html>
