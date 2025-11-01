@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kombat: Tank Battle</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Retro Look inspired by Atari */
+        :root {
+            --color-bg: #F5DEB3; /* Tan / Wheat */
+            --color-p1: #4B5320; /* Army Green */
+            --color-p2: #8B0000; /* Dark Red - CPU */
+            --color-wall: #696969; /* Dim Gray Boulders */
+            --color-bullet: #FFFF00;
+            --color-shadow: rgba(0, 0, 0, 0.5);
+            --font-main: 'Arial', sans-serif;
+        }
+
+        body {
+            background-color: #222;
+            font-family: var(--font-main);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 10px;
+        }
+
+        #game-container {
+            border: 8px solid #000;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+            max-width: 600px;
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            position: relative;
+        }
+
+        canvas {
+            background-color: var(--color-bg);
+            display: block;
+        }
+
+        #hud {
+            width: 100%;
+            max-width: 600px;
+            color: #fff;
+            padding: 10px 0;
+            display: flex;
+            justify-content: space-between;
+            font-weight: bold;
+            font-size: 0.875rem;
+        }
+
+        .player-info {
+            padding: 5px 10px;
+            border-radius: 5px;
+        }
+
+        #p1-info { background-color: var(--color-p1); color: white; }
+        #p2-info { background-color: var(--color-p2); color: white; }
+
+        .message-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.85);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            text-align: center;
+            font-family: monospace;
+        }
+
+        .message-content {
+            padding: 30px;
+            border: 3px solid #FFFF00;
+            box-shadow: 0 0 15px #FFFF00;
+            background-color: #000;
+            border-radius: 8px;
+        }
+
+        .action-button {
+            background-color: #FFFF00;
+            color: #000;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-weight: 700;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: background-color 0.2s;
+            border: none;
+        }
+        .action-button:hover { background-color: #FFFFFF; }
+        
+        #controls-info {
+            color: #ccc;
+            margin-top: 15px;
+            max-width: 600px;
+            font-size: 0.75rem;
+            text-align: left;
+            line-height: 1.4;
+        }
+
+        @media (max-width: 650px) {
+            #game-container {
+                border-width: 5px;
+            }
+            #hud {
+                font-size: 0.7rem;
+            }
+            .message-content {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="hud">
+        <div class="player-info" id="p1-info">P1 LIVES: <span id="p1-lives">0</span></div>
+        <div class="player-info" id="p2-info">CPU LIVES: <span id="p2-lives">0</span></div>
+    </div>
+
+    <div id="game-container">
+        <canvas id="gameCanvas"></canvas>
+
+        <div id="message-overlay" class="message-overlay">
+            <div class="message-content">
+                <h2 id="message-title" class="text-2xl mb-4">KOMBAT: TANK BATTLE</h2>
+                <p id="message-text" class="mb-6 text-sm">
+                    It's you (Army Green) against the CPU (Dark Red)! Destroy your opponent's tank before they destroy yours.
+                    <br>First to win 5 rounds wins the game.
+                </p>
+                <button class="action-button" id="start-button">START GAME</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="controls-info">
+        <p>
+            **PLAYER 1 (Army Green)**: **W** (Forward), **A** (Rotate Left), **D** (Rotate Right), **S** (Reverse), **Space** (Fire)
+            <br>
+            **PLAYER 2 (CPU)**: Automated.
+        </p>
+    </div>
+
+    <script>
+        // --- Game Configuration ---
+        const CANVAS_SIZE = 600;
+        const TANK_WIDTH = 25;
+        const TANK_HEIGHT = 35;
+        const TURRET_LENGTH = 20;
+        const TANK_TURN_SPEED = 2.5; // Radians per second
+        const TANK_MOVE_SPEED = 100; // Pixels per second
+        const BULLET_RADIUS = 3;
+        const BULLET_SPEED = 350; // Pixels per second
+        const FIRE_RATE = 0.8; // Seconds between shots
+
+        const GRID_SIZE = 15;
+        const TILE_SIZE = CANVAS_SIZE / GRID_SIZE;
+        const WALL_DENSITY = 0.15; // 15% chance for a tile to be a barrier
+
+        // --- Game State ---
+        let canvas, ctx;
+        let animationFrameId;
+
+        let gameState = {
+            p1: null,
+            p2: null,
+            bullets: [],
+            map: [], // Stores barrier objects
+            keys: {},
+            lastTime: 0,
+            isRunning: false,
+            roundOver: false,
+            p1Score: 0,
+            p2Score: 0,
+            message: '',
+            roundTimer: 0,
+        };
+
+        // --- Utility Classes ---
+
+        class Barrier {
+            constructor(x, y, type) {
+                this.x = x;
+                this.y = y;
+                this.width = TILE_SIZE;
+                this.height = TILE_SIZE;
+                this.type = type; // 'block' or 'boulder'
+            }
+
+            draw() {
+                ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--color-wall').trim();
+                ctx.strokeStyle = '#333';
+                ctx.lineWidth = 2;
+                ctx.shadowColor = 'var(--color-shadow)';
+                ctx.shadowBlur = 5;
+                
+                if (this.type === 'block') {
+                    // Rectangular barrier
+                    ctx.fillRect(this.x, this.y, this.width, this.height);
+                    ctx.strokeRect(this.x, this.y, this.width, this.height);
+                } else {
+                    // Circular boulder
+                    ctx.beginPath();
+                    ctx.arc(this.x + this.width / 2, this.y + this.height / 2, this.width / 2 - 5, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                    ctx.closePath();
+                }
+                ctx.shadowBlur = 0; // Reset shadow
+            }
+        }
+
+        class Tank {
+            constructor(x, y, angle, color, controls, isCPU = false) {
+                this.x = x;
+                this.y = y;
+                this.angle = angle;
+                this.color = color;
+                this.width = TANK_WIDTH;
+                this.height = TANK_HEIGHT;
+                this.controls = controls;
+                this.lastShotTime = 0;
+                this.isDestroyed = false;
+                this.isCPU = isCPU;
+                
+                // AI properties
+                this.aiTimer = 0;
+                this.aiDecisionInterval = 0.8; // Seconds between major decisions
+                this.aiMoveDir = { x: 0, y: 0 };
+            }
+
+            draw() {
+                if (this.isDestroyed) {
+                    ctx.font = '50px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('💥', this.x, this.y);
+                    return;
+                }
+
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.angle);
+
+                // Main body
+                ctx.fillStyle = this.color;
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 2;
+                ctx.shadowColor = 'var(--color-shadow)';
+                ctx.shadowBlur = 8;
+                ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
+                ctx.strokeRect(-this.width / 2, -this.height / 2, this.width, this.height);
+                ctx.shadowBlur = 0;
+
+                // Turret (Center)
+                ctx.fillStyle = '#000';
+                ctx.beginPath();
+                ctx.arc(0, 0, 8, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Cannon
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(TURRET_LENGTH, 0);
+                ctx.lineWidth = 5;
+                ctx.strokeStyle = '#333';
+                ctx.stroke();
+                
+                ctx.restore();
+            }
+
+            update(dt) {
+                if (this.isDestroyed) return;
+
+                if (this.isCPU) {
+                    this.updateCPU(dt);
+                    return;
+                }
+                
+                // --- HUMAN CONTROL LOGIC ---
+                const turnSpeed = TANK_TURN_SPEED * dt;
+                const moveSpeed = TANK_MOVE_SPEED * dt;
+                let dx = 0;
+                let dy = 0;
+
+                // Rotation
+                if (gameState.keys[this.controls.turnLeft]) {
+                    this.angle -= turnSpeed;
+                }
+                if (gameState.keys[this.controls.turnRight]) {
+                    this.angle += turnSpeed;
+                }
+
+                // Movement (Forward/Reverse)
+                if (gameState.keys[this.controls.forward]) {
+                    dx = Math.cos(this.angle) * moveSpeed;
+                    dy = Math.sin(this.angle) * moveSpeed;
+                } else if (gameState.keys[this.controls.reverse]) {
+                    dx = -Math.cos(this.angle) * moveSpeed * 0.5; // Slower reverse
+                    dy = -Math.sin(this.angle) * moveSpeed * 0.5;
+                }
+                
+                // Bullet firing
+                if (gameState.keys[this.controls.fire] && (gameState.lastTime - this.lastShotTime) / 1000 > FIRE_RATE) {
+                    this.fire();
+                    this.lastShotTime = gameState.lastTime;
+                }
+
+                // Temporary next position for collision check
+                const nextX = this.x + dx;
+                const nextY = this.y + dy;
+
+                // Boundary Collision
+                if (nextX > this.width / 2 && nextX < CANVAS_SIZE - this.width / 2) {
+                    this.x = nextX;
+                }
+                if (nextY > this.height / 2 && nextY < CANVAS_SIZE - this.height / 2) {
+                    this.y = nextY;
+                }
+
+                // Barrier Collision
+                this.checkBarrierCollision(dx, dy);
+            }
+            
+            updateCPU(dt) {
+                const turnSpeed = TANK_TURN_SPEED * dt;
+                const moveSpeed = TANK_MOVE_SPEED * dt;
+                
+                const target = gameState.p1;
+                if (target.isDestroyed) return;
+
+                // 1. Calculate Angle to Target
+                const dxToTarget = target.x - this.x;
+                const dyToTarget = target.y - this.y;
+                let targetAngle = Math.atan2(dyToTarget, dxToTarget);
+                
+                // Normalize angles (keep current angle between 0 and 2PI for easier comparison)
+                targetAngle = targetAngle < 0 ? targetAngle + 2 * Math.PI : targetAngle;
+                this.angle = this.angle % (2 * Math.PI); 
+                if (this.angle < 0) this.angle += 2 * Math.PI;
+
+                // 2. Aiming (Rotation)
+                let angleDiff = targetAngle - this.angle;
+                
+                // Normalize angle difference to be between -PI and PI
+                if (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+                if (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+
+                const aimingTolerance = 0.08; // How close the angle needs to be (in radians)
+                if (Math.abs(angleDiff) > aimingTolerance) { 
+                    // Rotate
+                    if (angleDiff > 0) {
+                        this.angle += Math.min(turnSpeed, angleDiff);
+                    } else {
+                        this.angle += Math.max(-turnSpeed, angleDiff);
+                    }
+                } else {
+                    // 3. Firing Logic
+                    if ((gameState.lastTime - this.lastShotTime) / 1000 > FIRE_RATE) {
+                        this.fire();
+                        this.lastShotTime = gameState.lastTime;
+                    }
+                }
+                
+                // 4. Movement Logic (Simple chase, with periodic decisions to avoid getting stuck)
+                let dx = 0;
+                let dy = 0;
+                
+                this.aiTimer -= dt;
+
+                if (this.aiTimer <= 0) {
+                    this.aiTimer = this.aiDecisionInterval + Math.random() * 0.5; // Jitter decision time
+
+                    // Decision: 70% chance to move forward, 30% to stop/reverse/wiggle
+                    const decision = Math.random();
+
+                    if (decision < 0.7) {
+                        // Move forward (chase)
+                        this.aiMoveDir = { x: Math.cos(this.angle), y: Math.sin(this.angle) };
+                    } else {
+                        // Stop or slightly reverse/rotate to break potential deadlocks
+                        this.aiMoveDir = { x: 0, y: 0 };
+                        if (Math.random() < 0.2) {
+                            this.aiMoveDir = { x: -Math.cos(this.angle) * 0.5, y: -Math.sin(this.angle) * 0.5 };
+                        }
+                    }
+                }
+                
+                // Apply current AI move direction
+                dx = this.aiMoveDir.x * moveSpeed;
+                dy = this.aiMoveDir.y * moveSpeed;
+                
+                const nextX = this.x + dx;
+                const nextY = this.y + dy;
+
+                // Boundary check
+                if (nextX > this.width / 2 && nextX < CANVAS_SIZE - this.width / 2) {
+                    this.x = nextX;
+                } else {
+                    // Hit boundary, force turn next cycle
+                    this.aiTimer = 0; 
+                }
+                if (nextY > this.height / 2 && nextY < CANVAS_SIZE - this.height / 2) {
+                    this.y = nextY;
+                } else {
+                    // Hit boundary, force turn next cycle
+                    this.aiTimer = 0;
+                }
+                
+                // Collision with Barriers 
+                this.checkBarrierCollision(dx, dy);
+
+                // If collision detection forced a stop, reset AI timer to decide next move
+                if ((Math.abs(dx) > 0 && this.x === nextX) || (Math.abs(dy) > 0 && this.y === nextY)) {
+                    this.aiTimer = 0; 
+                }
+            }
+
+            checkBarrierCollision(dx, dy) {
+                gameState.map.forEach(barrier => {
+                    // Simplified AABB collision check
+                    if (this.x + this.width / 2 > barrier.x && 
+                        this.x - this.width / 2 < barrier.x + barrier.width && 
+                        this.y + this.height / 2 > barrier.y && 
+                        this.y - this.height / 2 < barrier.y + barrier.height
+                    ) {
+                        // Collision occurred, try to push tank out on the axis with smallest overlap
+
+                        // Horizontal overlap
+                        let overlapX = 0;
+                        if (dx > 0) overlapX = (this.x + this.width / 2) - barrier.x;
+                        if (dx < 0) overlapX = (barrier.x + barrier.width) - (this.x - this.width / 2);
+                        
+                        // Vertical overlap
+                        let overlapY = 0;
+                        if (dy > 0) overlapY = (this.y + this.height / 2) - barrier.y;
+                        if (dy < 0) overlapY = (barrier.y + barrier.height) - (this.y - this.height / 2);
+
+                        if (Math.abs(overlapX) < Math.abs(overlapY)) {
+                            // Resolve X collision
+                            this.x -= dx;
+                            // If CPU, reset timer to make new decision
+                            if (this.isCPU) this.aiTimer = 0;
+                        } else {
+                            // Resolve Y collision
+                            this.y -= dy;
+                            // If CPU, reset timer to make new decision
+                            if (this.isCPU) this.aiTimer = 0;
+                        }
+                    }
+                });
+            }
+
+            fire() {
+                // Calculate starting position and direction of the bullet from the end of the turret
+                const startX = this.x + Math.cos(this.angle) * TURRET_LENGTH;
+                const startY = this.y + Math.sin(this.angle) * TURRET_LENGTH;
+                
+                const bullet = new Bullet(startX, startY, this.angle, this);
+                gameState.bullets.push(bullet);
+            }
+        }
+
+        class Bullet {
+            constructor(x, y, angle, shooter) {
+                this.x = x;
+                this.y = y;
+                this.angle = angle;
+                this.radius = BULLET_RADIUS;
+                this.shooter = shooter;
+                this.isAlive = true;
+            }
+
+            draw() {
+                if (!this.isAlive) return;
+                ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--color-bullet').trim();
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            update(dt) {
+                if (!this.isAlive) return;
+
+                const speed = BULLET_SPEED * dt;
+                this.x += Math.cos(this.angle) * speed;
+                this.y += Math.sin(this.angle) * speed;
+
+                this.checkCollision();
+            }
+
+            checkCollision() {
+                // 1. Boundary collision
+                if (this.x < 0 || this.x > CANVAS_SIZE || this.y < 0 || this.y > CANVAS_SIZE) {
+                    this.isAlive = false;
+                    return;
+                }
+
+                // 2. Barrier collision
+                for (const barrier of gameState.map) {
+                    if (this.x > barrier.x && this.x < barrier.x + barrier.width && 
+                        this.y > barrier.y && this.y < barrier.y + barrier.height
+                    ) {
+                        this.isAlive = false;
+                        return;
+                    }
+                }
+                
+                // 3. Tank collision
+                const opponent = (this.shooter === gameState.p1) ? gameState.p2 : gameState.p1;
+
+                if (!opponent.isDestroyed) {
+                    // Simple distance check from bullet to tank center
+                    const dx = this.x - opponent.x;
+                    const dy = this.y - opponent.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    // The tank is approximated by a circle with radius half its largest dimension
+                    if (distance < TANK_HEIGHT / 2) {
+                        this.isAlive = false;
+                        this.hitOpponent(opponent);
+                    }
+                }
+            }
+            
+            hitOpponent(opponent) {
+                opponent.isDestroyed = true;
+                gameState.roundOver = true;
+                
+                if (opponent === gameState.p2) {
+                    gameState.p1Score++;
+                    gameState.message = 'Player 1 WINS the round!';
+                } else {
+                    gameState.p2Score++;
+                    gameState.message = 'CPU WINS the round!';
+                }
+                
+                updateHUD();
+                
+                // Check for game win
+                if (gameState.p1Score >= 5 || gameState.p2Score >= 5) {
+                    const winner = gameState.p1Score >= 5 ? 'PLAYER 1' : 'CPU';
+                    showOverlay(`GAME OVER - ${winner} WINS!`, `The final score is P1: ${gameState.p1Score}, CPU: ${gameState.p2Score}. Press RESTART to play again.`);
+                    gameState.isRunning = false;
+                } else {
+                    // Start next round after a delay
+                    setTimeout(() => {
+                        showOverlay('ROUND END', gameState.message + '<br>Ready for the next round?');
+                        document.getElementById('start-button').textContent = 'NEXT ROUND';
+                        document.getElementById('start-button').onclick = startRound; 
+                    }, 1000);
+                }
+            }
+        }
+
+        // --- Game Logic ---
+
+        function generateMap() {
+            gameState.map = [];
+            // Use 1-based indexing to avoid placing barriers directly on the edge, 
+            // where 0 and GRID_SIZE-1 are
+            for (let i = 1; i < GRID_SIZE - 1; i++) {
+                for (let j = 1; j < GRID_SIZE - 1; j++) {
+                    // Skip the tank spawn zones (quarter and three-quarter points)
+                    const isSpawnX = (i === Math.floor(GRID_SIZE / 4) || i === Math.floor(GRID_SIZE * 3 / 4));
+                    const isSpawnY = (j === Math.floor(GRID_SIZE / 2));
+                    
+                    if (Math.random() < WALL_DENSITY && !(isSpawnX && isSpawnY)) {
+                        const x = i * TILE_SIZE;
+                        const y = j * TILE_SIZE;
+                        // Randomly choose between a block or a boulder
+                        const type = Math.random() < 0.5 ? 'block' : 'boulder';
+                        gameState.map.push(new Barrier(x, y, type));
+                    }
+                }
+            }
+        }
+
+        function initializeGame() {
+            // Full game reset (score reset)
+            gameState.p1Score = 0;
+            gameState.p2Score = 0;
+            updateHUD();
+            generateMap();
+            resetRound();
+        }
+        
+        function resetRound() {
+            // Reset for a new round (tank positions, bullets)
+            gameState.bullets = [];
+            gameState.roundOver = false;
+            
+            // Define a random Y position within the middle 60% of the canvas
+            const yMin = CANVAS_SIZE * 0.2;
+            const yMax = CANVAS_SIZE * 0.8;
+            const randomY1 = yMin + Math.random() * (yMax - yMin);
+            const randomY2 = yMin + Math.random() * (yMax - yMin); // Each tank gets an independent random Y
+
+            // P1 (Human) - Army Green
+            gameState.p1 = new Tank(
+                CANVAS_SIZE / 4, 
+                randomY1, // Use randomized Y position
+                0, // Starts facing right
+                getComputedStyle(document.documentElement).getPropertyValue('--color-p1').trim(),
+                { forward: 'w', reverse: 's', turnLeft: 'a', turnRight: 'd', fire: ' ' }
+            );
+
+            // P2 (CPU) - Dark Red
+            gameState.p2 = new Tank(
+                CANVAS_SIZE * 3 / 4, 
+                randomY2, // Use randomized Y position
+                Math.PI, // Starts facing left
+                getComputedStyle(document.documentElement).getPropertyValue('--color-p2').trim(),
+                null, // No controls needed
+                true // THIS IS THE CPU FLAG
+            );
+        }
+
+        function startRound() {
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+            
+            // If it was a restart (0-0 score), generate a new map
+            if (gameState.p1Score === 0 && gameState.p2Score === 0) {
+                 generateMap();
+            }
+            
+            resetRound();
+            gameState.isRunning = true;
+            document.getElementById('message-overlay').style.display = 'none';
+            gameState.lastTime = performance.now();
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+        
+        // --- Core Game Loop Functions ---
+
+        function update(dt) {
+            if (!gameState.isRunning || gameState.roundOver) return;
+
+            // Update entities
+            gameState.p1.update(dt);
+            gameState.p2.update(dt);
+            
+            // Update bullets and filter out dead ones
+            gameState.bullets.forEach(bullet => bullet.update(dt));
+            gameState.bullets = gameState.bullets.filter(bullet => bullet.isAlive);
+        }
+        
+        function draw() {
+            // Clear canvas
+            ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE); 
+            
+            // Draw Barriers
+            gameState.map.forEach(barrier => barrier.draw());
+
+            // Draw Tanks
+            gameState.p1.draw();
+            gameState.p2.draw();
+            
+            // Draw Bullets
+            gameState.bullets.forEach(bullet => bullet.draw());
+        }
+
+        function gameLoop(timestamp) {
+            const dt = (timestamp - gameState.lastTime) / 1000; // Convert to seconds
+            gameState.lastTime = timestamp;
+
+            update(dt);
+            draw();
+
+            if (gameState.isRunning) {
+                animationFrameId = requestAnimationFrame(gameLoop);
+            }
+        }
+
+        // --- UI & Event Handlers ---
+
+        function updateHUD() {
+            document.getElementById('p1-lives').textContent = gameState.p1Score;
+            document.getElementById('p2-lives').textContent = gameState.p2Score;
+        }
+
+        function showOverlay(title, text) {
+            document.getElementById('message-title').textContent = title;
+            document.getElementById('message-text').innerHTML = text; 
+            document.getElementById('message-overlay').style.display = 'flex';
+        }
+
+        function handleKey(event, isDown) {
+            const key = event.key.toLowerCase();
+            // Prevent scrolling on spacebar press
+            if (key === ' ') {
+                event.preventDefault();
+            }
+            // Only capture P1 keys
+            if (['w', 'a', 's', 'd', ' '].includes(key)) {
+                gameState.keys[key] = isDown;
+            }
+        }
+        
+        window.onload = function() {
+            canvas = document.getElementById('gameCanvas');
+            ctx = canvas.getContext('2d');
+            canvas.width = CANVAS_SIZE;
+            canvas.height = CANVAS_SIZE;
+
+            document.addEventListener('keydown', (e) => handleKey(e, true));
+            document.addEventListener('keyup', (e) => handleKey(e, false));
+            
+            document.getElementById('start-button').addEventListener('click', () => {
+                const action = document.getElementById('start-button').textContent.trim();
+                if (action === "START GAME" || action === "RESTART GAME") {
+                    initializeGame(); // Full reset for a new game
+                    startRound();
+                } else if (action === "NEXT ROUND") {
+                    startRound();
+                }
+            });
+            
+            initializeGame(); 
+            updateHUD();
+        };
+    </script>
+</body>
+</html>
