@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ice Smasher (Pengo Clone)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #0d1a33; /* Dark Blue Background */
+            font-family: 'Monospace', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 10px;
+        }
+
+        #game-container {
+            width: 95vw;
+            max-width: 660px; /* 15 tiles * 44px */
+            aspect-ratio: 15 / 11; /* 15 columns, 11 rows */
+            background-color: #252f40; /* Darker ice base */
+            border: 8px solid #60a5fa; /* Bright blue arcade border */
+            border-radius: 12px;
+            box-shadow: 0 0 30px rgba(96, 165, 250, 0.6);
+            position: relative;
+            overflow: hidden;
+        }
+
+        #game-canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        #hud {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            color: #e0f2fe;
+            font-size: 1.2rem;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            pointer-events: none;
+            z-index: 5;
+            text-shadow: 1px 1px 2px #000;
+        }
+
+        #overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            z-index: 10;
+        }
+
+        .action-button {
+            background-color: #f97316; /* Orange */
+            color: white;
+            padding: 12px 25px;
+            border-radius: 4px;
+            font-weight: 700;
+            cursor: pointer;
+            margin-top: 25px;
+            transition: all 0.2s;
+            border: 2px solid #fff;
+            box-shadow: 0 4px 0 0 #c24100;
+            text-transform: uppercase;
+        }
+        .action-button:hover { 
+            background-color: #fb923c;
+        }
+        .action-button:active {
+            box-shadow: none;
+            transform: translateY(4px);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <div id="hud">
+            <span>SCORE: <span id="score-display">0</span></span>
+            <span>LIVES: <span id="lives-display">3</span></span>
+        </div>
+        
+        <canvas id="game-canvas"></canvas>
+
+        <div id="overlay">
+            <h1 class="text-4xl text-blue-300 mb-4 font-bold">ICE SMASHER</h1>
+            <p class="mb-6 text-lg text-gray-300">
+                Push ice blocks to crush the Sno-Bees!
+                <br><br>
+                **Controls:**<br>
+                **Arrow Keys** or **WASD** to move and push.
+            </p>
+            <button class="action-button" id="start-button">START</button>
+        </div>
+    </div>
+    
+    <script>
+        // --- Game Constants ---
+        const GRID_COLS = 15;
+        const GRID_ROWS = 11;
+        const INITIAL_LIVES = 3;
+        
+        // Pixel movement speed
+        const PLAYER_SPEED = 3; 
+        const ENEMY_SPEED = 1.5;
+        const BLOCK_SPEED = 10; // Fast push speed
+        const PUSH_DELAY_MS = 150; // Delay to prevent spamming pushes
+        const STUN_DURATION = 1500; // Time enemy is stunned
+
+        // Maze values: 0: Floor, 1: Pushable Block, 2: Fixed Block (Diamond), 3: Broken Block/Stun Location
+        const INITIAL_MAZE = [
+            [2,1,1,1,1,1,1,1,1,1,1,1,1,1,2],
+            [1,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+            [1,0,1,1,0,1,1,0,1,1,0,1,1,0,1],
+            [1,0,1,0,0,0,0,0,0,0,0,0,1,0,1],
+            [1,0,0,0,1,1,0,1,0,1,1,0,0,0,1],
+            [1,0,0,0,0,0,0,2,0,0,0,0,0,0,1], // Center Diamond (2)
+            [1,0,0,0,1,1,0,1,0,1,1,0,0,0,1],
+            [1,0,1,0,0,0,0,0,0,0,0,0,1,0,1],
+            [1,0,1,1,0,1,1,0,1,1,0,1,1,0,1],
+            [1,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+            [2,1,1,1,1,1,1,1,1,1,1,1,1,1,2]
+        ];
+
+        // --- Game State ---
+        let canvas, ctx;
+        let cellWidth, cellHeight;
+        let isPlaying = false;
+        let animationFrameId;
+        let keys = {};
+        let lastPushTime = 0;
+
+        let game = {
+            score: 0,
+            lives: INITIAL_LIVES,
+        };
+
+        // Player state
+        let player = {
+            x: 0, y: 0,
+            gridX: 7, gridY: 5,
+            vx: 0, vy: 0,
+            radius: 15
+        };
+
+        // Entity lists
+        let enemies = [];
+        let blocks = []; // Moving blocks
+
+        // Maze data
+        let mazeData = [];
+
+        // --- Utility Functions ---
+
+        function setupCanvas() {
+            canvas = document.getElementById('game-canvas');
+            const container = document.getElementById('game-container');
+            
+            // Adjust canvas size to fit container while maintaining aspect ratio
+            const containerWidth = container.clientWidth;
+            const containerHeight = container.clientHeight;
+            
+            // Determine cell size
+            cellWidth = containerWidth / GRID_COLS;
+            cellHeight = containerHeight / GRID_ROWS;
+
+            // Ensure canvas is set to max size
+            canvas.width = containerWidth;
+            canvas.height = containerHeight;
+            
+            ctx = canvas.getContext('2d');
+            
+            player.radius = Math.min(cellWidth, cellHeight) * 0.35;
+        }
+
+        // Converts grid coordinates to pixel center coordinates
+        function toPixel(gridCoord, isX) {
+            return (gridCoord + 0.5) * (isX ? cellWidth : cellHeight);
+        }
+
+        // Converts pixel coordinates to the center of the nearest grid cell index
+        function toGrid(pixelCoord, isX) {
+            return Math.floor(pixelCoord / (isX ? cellWidth : cellHeight));
+        }
+
+        function updateHUD() {
+            document.getElementById('score-display').textContent = game.score;
+            document.getElementById('lives-display').textContent = game.lives;
+        }
+        
+        // --- Entity Management ---
+
+        function resetEntities() {
+            // Reset player position
+            player.x = toPixel(player.gridX, true);
+            player.y = toPixel(player.gridY, false);
+            player.vx = 0;
+            player.vy = 0;
+
+            // Clear and respawn enemies
+            enemies = [];
+            // Spawn points (8 total)
+            const spawnPoints = [
+                // 4 Corners
+                { x: 1, y: 1 }, { x: GRID_COLS - 2, y: 1 }, 
+                { x: 1, y: GRID_ROWS - 2 }, { x: GRID_COLS - 2, y: GRID_ROWS - 2 }, 
+                // 2 Centers
+                { x: 7, y: 1 }, // Center Top
+                { x: 7, y: GRID_ROWS - 2 }, // Center Bottom
+                // 2 Inner Quadrants
+                { x: 3, y: 3 }, // Inner Top-Left
+                { x: GRID_COLS - 4, y: GRID_ROWS - 4 } // Inner Bottom-Right (11, 7)
+            ];
+            
+            spawnPoints.forEach(p => {
+                // Check if the spawn point is a floor tile (0) before spawning
+                if (p.y >= 0 && p.y < GRID_ROWS && p.x >= 0 && p.x < GRID_COLS && mazeData[p.y][p.x] === 0) { 
+                    enemies.push({
+                        x: toPixel(p.x, true),
+                        y: toPixel(p.y, false),
+                        gridX: p.x, gridY: p.y,
+                        vx: 0, vy: 0, // Start with no velocity
+                        radius: player.radius * 0.9,
+                        isStunned: false,
+                        stunTimer: 0
+                    });
+                }
+            });
+            
+            blocks = []; // Clear moving blocks
+        }
+
+        function resetMaze() {
+            mazeData = INITIAL_MAZE.map(row => [...row]);
+        }
+
+        function resetGame(fullReset = true) {
+            if (fullReset) {
+                game.score = 0;
+                game.lives = INITIAL_LIVES;
+                resetMaze();
+            }
+            resetEntities();
+            updateHUD();
+        }
+
+        // --- Core Mechanics ---
+
+        function pushBlock(gridX, gridY, dx, dy) {
+            // Check if player is already pushing a block too quickly
+            if (Date.now() - lastPushTime < PUSH_DELAY_MS) return;
+            
+            const nextX = gridX + dx;
+            const nextY = gridY + dy;
+
+            if (nextX < 0 || nextX >= GRID_COLS || nextY < 0 || nextY >= GRID_ROWS) return;
+
+            const targetCell = mazeData[nextY][nextX];
+
+            if (targetCell === 1) { // Pushable block
+                
+                // Block will start moving
+                mazeData[nextY][nextX] = 0; // Clear original block position
+                blocks.push({
+                    x: toPixel(nextX, true),
+                    y: toPixel(nextY, false),
+                    gridX: nextX, gridY: nextY,
+                    vx: dx * BLOCK_SPEED,
+                    vy: dy * BLOCK_SPEED,
+                    radius: cellWidth * 0.45,
+                    isMoving: true
+                });
+                lastPushTime = Date.now();
+                
+            } else if (targetCell === 2) { // Fixed Block (Diamond) - Slam and break wall
+                
+                // Fixed block hit: Stun all enemies
+                enemies.forEach(e => {
+                    e.isStunned = true;
+                    e.stunTimer = STUN_DURATION;
+                });
+                game.score += 50;
+                lastPushTime = Date.now();
+
+            } else {
+                // Cannot push (empty space, or boundary)
+            }
+        }
+
+        function updatePlayer() {
+            // 1. Calculate Desired Velocity based on input
+            let desiredVx = 0;
+            let desiredVy = 0;
+
+            if (keys['ArrowLeft'] || keys['a']) desiredVx = -PLAYER_SPEED;
+            if (keys['ArrowRight'] || keys['d']) desiredVx = PLAYER_SPEED;
+            if (keys['ArrowUp'] || keys['w']) desiredVy = -PLAYER_SPEED;
+            if (keys['ArrowDown'] || keys['s']) desiredVy = PLAYER_SPEED;
+
+            // Only allow single-axis movement (Pengo style)
+            if (desiredVx !== 0 && desiredVy !== 0) {
+                // Priority logic to ensure single-axis movement
+                if (keys['ArrowUp'] || keys['w'] || keys['ArrowDown'] || keys['s']) desiredVx = 0; 
+                else if (keys['ArrowLeft'] || keys['a'] || keys['ArrowRight'] || keys['d']) desiredVy = 0;
+            }
+
+            player.vx = desiredVx;
+            player.vy = desiredVy;
+
+            // If stopped, apply a strong snap to the center of the current cell to prevent drift
+            if (player.vx === 0 && player.vy === 0) {
+                const snapFactor = 0.5;
+                player.x += (toPixel(player.gridX, true) - player.x) * snapFactor;
+                player.y += (toPixel(player.gridY, false) - player.y) * snapFactor;
+                return;
+            }
+
+            // 2. Identify Push/Collision Target
+            const currentGridX = toGrid(player.x, true);
+            const currentGridY = toGrid(player.y, false);
+            
+            const pushDirectionX = player.vx / Math.abs(player.vx || 1);
+            const pushDirectionY = player.vy / Math.abs(player.vy || 1);
+            
+            const targetGridX = currentGridX + pushDirectionX;
+            const targetGridY = currentGridY + pushDirectionY;
+            
+            const potentialTargetCell = mazeData[targetGridY] ? mazeData[targetGridY][targetGridX] : undefined;
+            const hitObstacle = (potentialTargetCell === 1 || potentialTargetCell === 2);
+
+            let canMove = true;
+            
+            if (hitObstacle) {
+                // We are trying to move into a block. Check for push alignment.
+                
+                // Alignment check: Must be close to the center of the current cell on the *non-moving* axis.
+                const alignmentTolerance = cellWidth * 0.45; // Generous tolerance
+                
+                let isAligned = false;
+                if (player.vx !== 0) { // Horizontal movement (check Y alignment)
+                    isAligned = Math.abs(player.y - toPixel(currentGridY, false)) < alignmentTolerance;
+                } else if (player.vy !== 0) { // Vertical movement (check X alignment)
+                    isAligned = Math.abs(player.x - toPixel(currentGridX, true)) < alignmentTolerance;
+                }
+                
+                if (isAligned) {
+                    // Try to push. If push successful, we still stop moving for the frame.
+                    pushBlock(currentGridX, currentGridY, pushDirectionX, pushDirectionY);
+                }
+                
+                // Regardless of push attempt, if the target cell is an obstacle, we cannot move into it.
+                canMove = false;
+                player.vx = 0; 
+                player.vy = 0;
+            }
+
+            // 3. Check Boundary Collision (if we still plan to move)
+            if (canMove) {
+                // Use the intended target grid to check boundaries
+                if (targetGridX < 0 || targetGridX >= GRID_COLS || targetGridY < 0 || targetGridY >= GRID_ROWS) {
+                    canMove = false;
+                    player.vx = 0;
+                    player.vy = 0;
+                }
+            }
+
+            // 4. Apply Movement
+            if (canMove) {
+                player.x += player.vx;
+                player.y += player.vy;
+                player.gridX = toGrid(player.x, true);
+                player.gridY = toGrid(player.y, false);
+
+                // Gentle Snap on Non-Moving Axis (to keep player centered in lanes)
+                const snapFactor = 0.2;
+                if (player.vx !== 0) {
+                    // Snap Y axis
+                    player.y += (toPixel(currentGridY, false) - player.y) * snapFactor; 
+                }
+                if (player.vy !== 0) {
+                    // Snap X axis
+                    player.x += (toPixel(currentGridX, true) - player.x) * snapFactor;
+                }
+            }
+        }
+
+
+        function updateBlocks() {
+            for (let i = blocks.length - 1; i >= 0; i--) {
+                const block = blocks[i];
+
+                if (!block.isMoving) continue;
+
+                block.x += block.vx;
+                block.y += block.vy;
+
+                const nextGridX = toGrid(block.x, true);
+                const nextGridY = toGrid(block.y, false);
+                
+                // Check if the block has moved into a new cell or hit a solid object
+                const hitSolid = (mazeData[nextGridY] && (mazeData[nextGridY][nextGridX] === 1 || mazeData[nextGridY][nextGridX] === 2));
+                const hitBoundary = nextGridX < 0 || nextGridX >= GRID_COLS || nextGridY < 0 || nextGridY >= GRID_ROWS;
+
+                if (hitSolid || hitBoundary) {
+                    // Stop the block at the center of the previous tile
+                    block.isMoving = false;
+                    
+                    // Snap the block back to the center of the cell it last occupied
+                    const finalGridX = toGrid(block.x - block.vx, true);
+                    const finalGridY = toGrid(block.y - block.vy, false);
+                    
+                    block.x = toPixel(finalGridX, true);
+                    block.y = toPixel(finalGridY, false);
+                    block.gridX = finalGridX;
+                    block.gridY = finalGridY;
+                    
+                    // If block hits a solid object (1 or 2), the block stops at its current grid cell
+                    mazeData[finalGridY][finalGridX] = 1; // Block resets to non-moving in the maze grid
+                    
+                    // If block hits a fixed wall (2), it breaks the wall and the pushed block disappears
+                    if (hitSolid && mazeData[nextGridY][nextGridX] === 2) {
+                        mazeData[finalGridY][finalGridX] = 0; // The pushed block disappears
+                        mazeData[nextGridY][nextGridX] = 0; // The fixed block (diamond) disappears
+                        game.score += 200; // Big bonus for breaking the diamond
+                    }
+
+                    // Remove the moving block instance
+                    blocks.splice(i, 1);
+                } else {
+                    // Check for enemy crush collision during movement
+                    for (let j = enemies.length - 1; j >= 0; j--) {
+                        const enemy = enemies[j];
+                        
+                        const distSq = (block.x - enemy.x)**2 + (block.y - enemy.y)**2;
+                        if (distSq < (block.radius + enemy.radius)**2) {
+                            // Enemy crushed!
+                            enemies.splice(j, 1);
+                            game.score += 500;
+                            updateHUD();
+                            
+                            if (enemies.length === 0) {
+                                gameOver(true);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        function updateEnemies() {
+            enemies.forEach(e => {
+                if (e.isStunned) {
+                    e.stunTimer -= 1000 / 60;
+                    if (e.stunTimer <= 0) {
+                        e.isStunned = false;
+                    }
+                    return;
+                }
+                
+                // Check if enemy is centered in its tile (to make a turn decision)
+                const atCenter = Math.abs(e.x - toPixel(e.gridX, true)) < 2 &&
+                                 Math.abs(e.y - toPixel(e.gridY, false)) < 2;
+
+                if (atCenter) {
+                    // --- AI DECISION LOGIC (Wandering vs. Tracking) ---
+                    
+                    // 1. Get directions towards player
+                    const dxToPlayer = toPixel(player.gridX, true) - e.x;
+                    const dyToPlayer = toPixel(player.gridY, false) - e.y;
+                    
+                    let targetVx = 0;
+                    let targetVy = 0;
+                    
+                    let shouldWander = Math.random() < 0.4; // 40% chance to wander
+
+                    if (!shouldWander) {
+                        // Prioritize moving on the axis with the larger distance difference
+                        if (Math.abs(dxToPlayer) > Math.abs(dyToPlayer)) {
+                            targetVx = dxToPlayer > 0 ? ENEMY_SPEED : -ENEMY_SPEED;
+                            targetVy = 0;
+                        } else {
+                            targetVx = 0;
+                            targetVy = dyToPlayer > 0 ? ENEMY_SPEED : -ENEMY_SPEED;
+                        }
+                    } else {
+                        // Wander: Choose a random orthogonal direction
+                        const directions = [
+                            { vx: ENEMY_SPEED, vy: 0 }, { vx: -ENEMY_SPEED, vy: 0 },
+                            { vx: 0, vy: ENEMY_SPEED }, { vx: 0, vy: -ENEMY_SPEED }
+                        ];
+                        const randomDir = directions[Math.floor(Math.random() * directions.length)];
+                        targetVx = randomDir.vx;
+                        targetVy = randomDir.vy;
+                    }
+
+                    // 2. Validate move against blocks/boundaries
+                    const targetGridX = toGrid(e.x + targetVx * cellWidth / ENEMY_SPEED, true);
+                    const targetGridY = toGrid(e.y + targetVy * cellHeight / ENEMY_SPEED, false);
+                    
+                    const isValidMove = (targetGridX >= 0 && targetGridX < GRID_COLS && targetGridY >= 0 && targetGridY < GRID_ROWS && mazeData[targetGridY][targetGridX] === 0);
+
+                    if (isValidMove) {
+                        e.vx = targetVx;
+                        e.vy = targetVy;
+                    } else {
+                        // If chosen path is blocked, stop or try perpendicular move
+                        e.vx = 0;
+                        e.vy = 0; 
+                    }
+                }
+
+                // Final move
+                e.x += e.vx;
+                e.y += e.vy;
+                e.gridX = toGrid(e.x, true);
+                e.gridY = toGrid(e.y, false);
+
+                // Collision with player
+                const distSq = (player.x - e.x)**2 + (player.y - e.y)**2;
+                if (distSq < (player.radius + e.radius)**2) {
+                    loseLife();
+                }
+            });
+        }
+        
+        // --- Game Flow ---
+
+        function loseLife() {
+            if (!isPlaying) return;
+            isPlaying = false;
+            game.lives--;
+            updateHUD();
+
+            if (game.lives <= 0) {
+                gameOver(false);
+            } else {
+                setTimeout(() => {
+                    resetEntities();
+                    isPlaying = true;
+                }, 1500); 
+            }
+        }
+
+        function startGame() {
+            document.getElementById('overlay').style.display = 'none';
+            isPlaying = true;
+            resetGame(true);
+            
+            if (!animationFrameId) {
+                gameLoop();
+            }
+        }
+
+        function gameOver(win) {
+            isPlaying = false;
+            const overlay = document.getElementById('overlay');
+            const title = overlay.querySelector('h1');
+            const text = overlay.querySelector('p');
+            const button = overlay.querySelector('button');
+
+            title.textContent = win ? "PERFECT SCORE!" : "GAME OVER";
+            title.classList.remove('text-blue-300', 'text-red-500');
+            title.classList.add(win ? 'text-green-500' : 'text-red-500');
+            text.innerHTML = win ? `You crushed them all! Final Score: ${game.score}` : `Final Score: ${game.score}`;
+            button.textContent = "PLAY AGAIN";
+            button.onclick = startGame;
+            
+            overlay.style.display = 'flex';
+        }
+
+        // --- Drawing Functions ---
+
+        function drawMaze() {
+            // Draw floor/empty space
+            ctx.fillStyle = '#1e293b'; 
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            mazeData.forEach((row, y) => {
+                row.forEach((cell, x) => {
+                    const cellX = x * cellWidth;
+                    const cellY = y * cellHeight;
+
+                    if (cell === 1) {
+                        // Pushable Block (Ice)
+                        ctx.fillStyle = '#93c5fd'; 
+                        ctx.fillRect(cellX, cellY, cellWidth, cellHeight);
+                        ctx.strokeStyle = '#3b82f6';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(cellX, cellY, cellWidth, cellHeight);
+                    } else if (cell === 2) {
+                        // Fixed Block (Diamond/Bonus)
+                        ctx.fillStyle = '#fde047'; 
+                        ctx.fillRect(cellX, cellY, cellWidth, cellHeight);
+                        ctx.strokeStyle = '#d97706';
+                        ctx.lineWidth = 3;
+                        ctx.strokeRect(cellX, cellY, cellWidth, cellHeight);
+                    }
+                });
+            });
+            
+            // Draw moving blocks on top of the grid
+            blocks.forEach(block => {
+                ctx.fillStyle = '#93c5fd'; 
+                ctx.fillRect(block.x - cellWidth / 2, block.y - cellHeight / 2, cellWidth, cellHeight);
+                ctx.strokeStyle = '#3b82f6';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(block.x - cellWidth / 2, block.y - cellHeight / 2, cellWidth, cellHeight);
+            });
+        }
+
+        function drawPlayer() {
+            const x = player.x;
+            const y = player.y;
+            const r = player.radius;
+            
+            // Body (Red Penguin)
+            ctx.fillStyle = '#ef4444';
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Beak (Yellow Triangle)
+            ctx.fillStyle = '#facc15';
+            ctx.beginPath();
+            
+            // Determine last movement direction for beak
+            let lastVx = player.vx || (keys['ArrowRight'] || keys['d'] ? 1 : (keys['ArrowLeft'] || keys['a'] ? -1 : 0));
+            let lastVy = player.vy || (keys['ArrowDown'] || keys['s'] ? 1 : (keys['ArrowUp'] || keys['w'] ? -1 : 0));
+            
+            // If stopped, default direction
+            if (lastVx === 0 && lastVy === 0) {
+                lastVx = 1; // Default right if completely stopped
+            }
+            
+            let angle = 0;
+            if (Math.abs(lastVx) > Math.abs(lastVy)) { // Horizontal movement
+                angle = lastVx > 0 ? 0 : Math.PI;
+            } else if (Math.abs(lastVy) > Math.abs(lastVx)) { // Vertical movement
+                angle = lastVy > 0 ? Math.PI / 2 : -Math.PI / 2;
+            } else { // Fallback
+                angle = lastVx > 0 ? 0 : Math.PI; 
+            }
+
+
+            ctx.moveTo(x + Math.cos(angle) * r, y + Math.sin(angle) * r);
+            ctx.lineTo(x + Math.cos(angle + Math.PI * 0.4) * r * 0.5, y + Math.sin(angle + Math.PI * 0.4) * r * 0.5);
+            ctx.lineTo(x + Math.cos(angle - Math.PI * 0.4) * r * 0.5, y + Math.sin(angle - Math.PI * 0.4) * r * 0.5);
+            ctx.fill();
+        }
+        
+        function drawEnemies() {
+            enemies.forEach(e => {
+                const x = e.x;
+                const y = e.y;
+                const r = e.radius;
+                
+                // Body (Sno-Bee: Blue/Purple)
+                const isFlashing = e.isStunned && (Math.floor(Date.now() / 150) % 2 === 0);
+                ctx.fillStyle = isFlashing ? '#ffffff' : '#6366f1'; 
+                
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Eyes (white with black pupil)
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(x - r * 0.4, y - r * 0.2, r * 0.2, 0, Math.PI * 2);
+                ctx.arc(x + r * 0.4, y - r * 0.2, r * 0.2, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.fillStyle = 'black';
+                ctx.beginPath();
+                ctx.arc(x - r * 0.4, y - r * 0.2, r * 0.1, 0, Math.PI * 2);
+                ctx.arc(x + r * 0.4, y - r * 0.2, r * 0.1, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        function draw() {
+            drawMaze();
+            drawEnemies();
+            drawPlayer();
+        }
+
+        function gameLoop() {
+            if (isPlaying) {
+                updatePlayer();
+                updateBlocks();
+                updateEnemies();
+                draw();
+            }
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        // --- Input Handling ---
+
+        function handleKeydown(e) {
+            const key = e.key;
+            keys[key] = true;
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd'].includes(key.toLowerCase())) {
+                e.preventDefault();
+            }
+        }
+
+        function handleKeyup(e) {
+            keys[e.key] = false;
+        }
+
+        // --- Initialization ---
+
+        window.addEventListener('load', () => {
+            setupCanvas();
+            window.addEventListener('resize', setupCanvas);
+
+            document.getElementById('start-button').addEventListener('click', startGame);
+            window.addEventListener('keydown', handleKeydown);
+            window.addEventListener('keyup', handleKeyup);
+            
+            resetGame(true);
+            draw();
+        });
+    </script>
+</body>
+</html>
