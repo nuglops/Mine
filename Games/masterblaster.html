@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Blast Master</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #262626; /* Dark background */
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px 0;
+            user-select: none;
+            overflow: hidden;
+        }
+
+        #game-container {
+            position: relative;
+            background-color: #525252; /* Game background */
+            border: 8px solid #fcd34d; /* Yellow-400 border */
+            box-shadow: 0 0 20px rgba(252, 211, 77, 0.6);
+            border-radius: 12px;
+            max-width: 95vw;
+        }
+
+        #game-canvas {
+            display: block;
+        }
+
+        #overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.85);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            z-index: 10;
+            border-radius: 4px;
+        }
+
+        .action-button {
+            background-color: #ef4444; /* Red */
+            color: white;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-weight: 700;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: all 0.2s;
+            border: 2px solid #fca5a5;
+            box-shadow: 0 4px 0 0 #b91c1c;
+            text-transform: uppercase;
+        }
+        .action-button:active {
+            box-shadow: none;
+            transform: translateY(4px);
+        }
+
+        /* --- Mobile Controls Container --- */
+        #controls-wrapper {
+            width: 100%;
+            max-width: 600px;
+            margin-top: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        
+        .control-area {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 90%;
+            max-width: 400px;
+        }
+
+        .dpad {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(3, 1fr);
+            width: 150px;
+            height: 150px;
+        }
+
+        .dpad-button {
+            background-color: #6366f1; /* Indigo */
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.2rem;
+            font-weight: bold;
+            border: 1px solid #4338ca;
+            cursor: pointer;
+            user-select: none;
+            box-shadow: 0 2px #4f46e5;
+        }
+        .dpad-button:active {
+            box-shadow: none;
+            transform: translateY(2px);
+            background-color: #4f46e5;
+        }
+
+        #move-up    { grid-area: 1 / 2 / 2 / 3; border-radius: 8px 8px 0 0; }
+        #move-left  { grid-area: 2 / 1 / 3 / 2; border-radius: 8px 0 0 8px; }
+        #move-right { grid-area: 2 / 3 / 3 / 4; border-radius: 0 8px 8px 0; }
+        #move-down  { grid-area: 3 / 2 / 4 / 3; border-radius: 0 0 8px 8px; }
+
+        .action-pad {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        #bomb-button {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background-color: #f97316; /* Orange */
+            box-shadow: 0 4px #c24100;
+            border: 3px solid #fff;
+            font-size: 1.5rem;
+        }
+        #bomb-button:active {
+            box-shadow: none;
+            transform: translateY(4px);
+            background-color: #ea580c;
+        }
+
+        /* Hide elements on devices that primarily use pointers (desktop) */
+        @media (pointer: fine) {
+            #controls-wrapper {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <canvas id="game-canvas"></canvas>
+        <div id="overlay">
+            <h1 class="text-4xl text-yellow-400 mb-4 font-bold">BLAST MASTER</h1>
+            <p class="mb-6 text-lg text-gray-300">
+                **Objective:**<br>
+                1. Destroy all 3 green bad guys.<br>
+                2. Find the hidden **EXIT** under a soft block.<br>
+                <br>
+                **Controls:**<br>
+                **Movement:** WASD or Arrow Keys<br>
+                **Place Bomb:** SPACE or Bomb Button
+            </p>
+            <button class="action-button" id="start-button">START GAME</button>
+        </div>
+    </div>
+
+    <!-- Mobile Controls -->
+    <div id="controls-wrapper">
+        <div class="control-area">
+            <!-- D-PAD for Movement -->
+            <div class="dpad">
+                <div id="move-up" class="dpad-button" data-key="w">▲</div>
+                <div id="move-left" class="dpad-button" data-key="a">◀</div>
+                <div id="move-right" class="dpad-button" data-key="d">▶</div>
+                <div id="move-down" class="dpad-button" data-key="s">▼</div>
+            </div>
+            
+            <!-- Action Button for Bomb -->
+            <div class="action-pad">
+                <div id="bomb-button" class="action-button" data-key="space">💣</div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // --- Game Constants ---
+        var TILE_SIZE = 40;
+        var MAP_COLS = 15;
+        var MAP_ROWS = 13;
+        var CANVAS_WIDTH = MAP_COLS * TILE_SIZE;
+        var CANVAS_HEIGHT = MAP_ROWS * TILE_SIZE;
+        var BOMB_TIMER = 2000; // 2 seconds
+        var EXPLOSION_DURATION = 500; // 0.5 seconds
+        var EXPLOSION_RANGE = 2; // Tiles away from center
+        var ENEMY_COUNT = 3;
+
+        // Tile IDs
+        var TILE_EMPTY = 0;
+        var TILE_SOLID = 1;         // Unbreakable wall
+        var TILE_SOFT = 2;          // Destructible wall
+        var TILE_EXIT_HIDDEN = 3;   // Exit hidden under soft block appearance
+        var TILE_EXIT_OPEN = 4;     // Exit revealed
+
+        // Colors
+        var COLOR_FLOOR = '#6b7280';    // Gray-500
+        var COLOR_SOLID = '#374151';    // Gray-700 (Unbreakable)
+        var COLOR_SOFT = '#9ca3af';     // Gray-400 (Destructible)
+        var COLOR_PLAYER = '#f87171';   // Red-400
+        var COLOR_BOMB = '#1f2937';     // Gray-800
+        var COLOR_EXPLOSION = '#fde047';// Yellow-400
+        var COLOR_ENEMY = '#10b981';    // Emerald-500
+        var COLOR_EXIT = '#059669';     // Emerald-600
+
+        // --- Game State ---
+        var canvas, ctx;
+        var isPlaying = false;
+        var keys = {};
+        var lastTime = 0;
+        var gameLoopId;
+
+        var player = {
+            x: 1, 
+            y: 1,
+            nextX: 1,
+            nextY: 1,
+            speed: TILE_SIZE * 0.1, 
+            isMoving: false,
+            bombs: [],
+            isDead: false
+        };
+
+        var map = [];
+        var explosions = [];
+        var enemies = [];
+
+        // --- Map & Enemy Initialization ---
+        
+        function generateMap() {
+            var newMap = [];
+            var softBlockCoords = [];
+
+            for (var y = 0; y < MAP_ROWS; y++) {
+                newMap[y] = [];
+                for (var x = 0; x < MAP_COLS; x++) {
+                    // Outer Border and Internal Cross Walls
+                    if (y === 0 || y === MAP_ROWS - 1 || x === 0 || x === MAP_COLS - 1 || (x % 2 === 0 && y % 2 === 0)) {
+                        newMap[y][x] = TILE_SOLID;
+                    } 
+                    // Player starting zone must be clear
+                    else if ((x === 1 && y === 1) || (x === 1 && y === 2) || (x === 2 && y === 1)) {
+                        newMap[y][x] = TILE_EMPTY; 
+                    }
+                    // Soft Blocks (Randomly placed)
+                    else if (Math.random() < 0.7) {
+                        newMap[y][x] = TILE_SOFT;
+                        softBlockCoords.push({x: x, y: y});
+                    }
+                    else {
+                        newMap[y][x] = TILE_EMPTY;
+                    }
+                }
+            }
+
+            // Place Exit under a random soft block
+            if (softBlockCoords.length > 0) {
+                var randomIndex = Math.floor(Math.random() * softBlockCoords.length);
+                var exitPos = softBlockCoords[randomIndex];
+                newMap[exitPos.y][exitPos.x] = TILE_EXIT_HIDDEN;
+            }
+            
+            return newMap;
+        }
+        
+        function initializeEnemies(count) {
+            var newEnemies = [];
+            for (let i = 0; i < count; i++) {
+                // Find a safe starting position far from the player (1, 1)
+                let x, y;
+                do {
+                    x = Math.floor(Math.random() * (MAP_COLS - 2)) + 1;
+                    y = Math.floor(Math.random() * (MAP_ROWS - 2)) + 1;
+                } while (
+                    (map[y][x] !== TILE_EMPTY && map[y][x] !== TILE_EXIT_OPEN) || // Must be empty/open exit
+                    (Math.abs(x - 1) + Math.abs(y - 1) < 4) // Must be far from player start
+                );
+
+                newEnemies.push({
+                    x: x,
+                    y: y,
+                    nextX: x,
+                    nextY: y,
+                    speed: TILE_SIZE * 0.05, // Slower movement
+                    isMoving: false,
+                    direction: Math.floor(Math.random() * 4), // Initial random direction
+                    lastMoveTime: performance.now(),
+                    moveDelay: 1000 + Math.random() * 500 // Staggered movement timing
+                });
+            }
+            return newEnemies;
+        }
+
+
+        function setupGame() {
+            canvas = document.getElementById('game-canvas');
+            canvas.width = CANVAS_WIDTH;
+            canvas.height = CANVAS_HEIGHT;
+            ctx = canvas.getContext('2d');
+            
+            resetGame();
+        }
+
+        function resetGame() {
+            map = generateMap();
+            player.x = 1;
+            player.y = 1;
+            player.nextX = 1;
+            player.nextY = 1;
+            player.isMoving = false;
+            player.bombs = [];
+            explosions = [];
+            player.isDead = false;
+            enemies = initializeEnemies(ENEMY_COUNT);
+        }
+
+        function startGame() {
+            document.getElementById('overlay').style.display = 'none';
+            isPlaying = true;
+            lastTime = performance.now();
+            gameLoopId = requestAnimationFrame(gameLoop);
+        }
+        
+        function stopGame(message) {
+            isPlaying = false;
+            cancelAnimationFrame(gameLoopId);
+            
+            var overlay = document.getElementById('overlay');
+            var title = overlay.querySelector('h1');
+            var text = overlay.querySelector('p');
+            var button = overlay.querySelector('button');
+
+            title.textContent = message;
+            title.classList.remove('text-yellow-400');
+            title.classList.remove('text-red-500');
+            title.classList.remove('text-green-500');
+            
+            if (message.includes("GAME OVER")) {
+                title.classList.add('text-red-500');
+            } else {
+                title.classList.add('text-green-500');
+            }
+            
+            text.innerHTML = "Press RESTART to try again!";
+            button.textContent = "RESTART";
+            
+            overlay.style.display = 'flex';
+        }
+
+        // --- Input Handling ---
+
+        function setInputState(key, isDown) {
+            // Map common keys to standard format
+            var normalizedKey = key.toLowerCase();
+            if (normalizedKey === 'arrowup') normalizedKey = 'w';
+            if (normalizedKey === 'arrowdown') normalizedKey = 's';
+            if (normalizedKey === 'arrowleft') normalizedKey = 'a';
+            if (normalizedKey === 'arrowright') normalizedKey = 'd';
+            if (normalizedKey === ' ') normalizedKey = 'space';
+            
+            keys[normalizedKey] = isDown;
+        }
+
+        function handleKeydown(e) {
+            if (e.key.toLowerCase() === ' ') e.preventDefault();
+            setInputState(e.key, true);
+        }
+
+        function handleKeyup(e) {
+            setInputState(e.key, false);
+        }
+
+        // --- Game Logic ---
+        
+        function placeBomb() {
+            var tx = Math.round(player.x);
+            var ty = Math.round(player.y);
+            
+            var bombExists = player.bombs.some(function(b) {
+                return Math.round(b.x) === tx && Math.round(b.y) === ty;
+            });
+            
+            if (!player.isDead && !player.isMoving && !bombExists) {
+                player.bombs.push({
+                    x: tx,
+                    y: ty,
+                    time: performance.now(),
+                    exploded: false
+                });
+            }
+        }
+
+        function resolveExplosion(bomb) {
+            bomb.exploded = true;
+
+            // 2. Center explosion on bomb tile
+            explosions.push({ x: bomb.x, y: bomb.y, time: performance.now() });
+
+            // 3. Explosion rays: Check 4 directions (up, down, left, right)
+            var directions = [[0, -1], [0, 1], [-1, 0], [1, 0]]; // [dx, dy]
+
+            directions.forEach(function(dir) {
+                var dx = dir[0];
+                var dy = dir[1];
+
+                for (var r = 1; r <= EXPLOSION_RANGE; r++) {
+                    var tx = bomb.x + dx * r;
+                    var ty = bomb.y + dy * r;
+
+                    if (tx < 0 || tx >= MAP_COLS || ty < 0 || ty >= MAP_ROWS) break;
+
+                    var tile = map[ty][tx];
+
+                    // Solid wall stops explosion
+                    if (tile === TILE_SOLID) break;
+
+                    // Add explosion effect
+                    explosions.push({ x: tx, y: ty, time: performance.now() });
+                    
+                    // Destructible block check
+                    if (tile === TILE_SOFT || tile === TILE_EXIT_HIDDEN) {
+                        if (tile === TILE_SOFT) {
+                           map[ty][tx] = TILE_EMPTY;
+                        } else if (tile === TILE_EXIT_HIDDEN) {
+                           map[ty][tx] = TILE_EXIT_OPEN; // Reveal the hidden exit
+                        }
+                        break; // Destruction stops explosion ray
+                    }
+                    
+                    // Chain reaction check
+                    var chainedBomb = player.bombs.find(function(b) {
+                        return !b.exploded && b.x === tx && b.y === ty;
+                    });
+                    
+                    if (chainedBomb) {
+                        resolveExplosion(chainedBomb);
+                        break;
+                    }
+                }
+            });
+        }
+
+        function updatePlayerMovement() {
+            if (player.isDead) return;
+
+            var inputX = (keys['a'] ? -1 : 0) + (keys['d'] ? 1 : 0);
+            var inputY = (keys['w'] ? -1 : 0) + (keys['s'] ? 1 : 0);
+            
+            if (inputX !== 0 || inputY !== 0) {
+                if (!player.isMoving) {
+                    player.isMoving = true;
+                    player.nextX = player.x + inputX;
+                    player.nextY = player.y + inputY;
+                    
+                    var targetTile = map[Math.round(player.nextY)][Math.round(player.nextX)];
+                    
+                    // Block movement if target is a solid wall, soft block, or hidden exit
+                    if (targetTile === TILE_SOLID || targetTile === TILE_SOFT || targetTile === TILE_EXIT_HIDDEN) {
+                         player.isMoving = false;
+                         player.nextX = player.x;
+                         player.nextY = player.y;
+                    }
+                }
+            } else {
+                if (Math.abs(player.x - player.nextX) < 0.05 && Math.abs(player.y - player.nextY) < 0.05) {
+                    player.isMoving = false;
+                    player.x = Math.round(player.x);
+                    player.y = Math.round(player.y);
+                    player.nextX = player.x;
+                    player.nextY = player.y;
+                    
+                    // Check for Win Condition when movement stops
+                    var playerTileX = Math.round(player.x);
+                    var playerTileY = Math.round(player.y);
+                    
+                    // Win: on open exit tile AND all enemies are defeated
+                    if (map[playerTileY][playerTileX] === TILE_EXIT_OPEN && enemies.length === 0) {
+                        stopGame("VICTORY! ALL ENEMIES DEFEATED & EXIT REACHED!");
+                        return; 
+                    }
+                }
+            }
+
+            // Move towards the target
+            if (player.isMoving) {
+                var dx = player.nextX - player.x;
+                var dy = player.nextY - player.y;
+                
+                var distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < player.speed / TILE_SIZE) {
+                    player.x = player.nextX;
+                    player.y = player.nextY;
+                    player.isMoving = false;
+                } else {
+                    var normalizedDx = dx / distance;
+                    var normalizedDy = dy / distance;
+                    player.x += normalizedDx * player.speed / TILE_SIZE;
+                    player.y += normalizedDy * player.speed / TILE_SIZE;
+                }
+            }
+        }
+        
+        // --- Enemy Logic ---
+
+        function moveEnemy(enemy) {
+            enemy.isMoving = true;
+            var directions = [[0, -1], [1, 0], [0, 1], [-1, 0]]; // Up, Right, Down, Left
+            var currentDir = enemy.direction;
+
+            // Try current direction first, then cycle through others
+            for (let i = 0; i < 4; i++) {
+                var dirIndex = (currentDir + i) % 4;
+                var dx = directions[dirIndex][0];
+                var dy = directions[dirIndex][1];
+                
+                var targetX = Math.round(enemy.x) + dx;
+                var targetY = Math.round(enemy.y) + dy;
+
+                if (targetX > 0 && targetX < MAP_COLS - 1 && targetY > 0 && targetY < MAP_ROWS - 1) {
+                    var targetTile = map[targetY][targetX];
+                    
+                    // Enemies only move to TILE_EMPTY or TILE_EXIT_OPEN tiles (not walls)
+                    if (targetTile === TILE_EMPTY || targetTile === TILE_EXIT_OPEN) {
+                        enemy.nextX = targetX;
+                        enemy.nextY = targetY;
+                        enemy.direction = dirIndex; // Lock in this direction
+                        enemy.lastMoveTime = performance.now();
+                        return;
+                    }
+                }
+            }
+            
+            // If no move is possible, reset movement state and pick a new random direction next time
+            enemy.isMoving = false;
+            enemy.direction = Math.floor(Math.random() * 4); 
+        }
+
+        function updateEnemyMovement(enemy) {
+            if (enemy.isMoving) {
+                var dx = enemy.nextX - enemy.x;
+                var dy = enemy.nextY - enemy.y;
+                
+                var distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < enemy.speed / TILE_SIZE) {
+                    enemy.x = enemy.nextX;
+                    enemy.y = enemy.nextY;
+                    enemy.isMoving = false;
+                } else {
+                    var normalizedDx = dx / distance;
+                    var normalizedDy = dy / distance;
+                    enemy.x += normalizedDx * enemy.speed / TILE_SIZE;
+                    enemy.y += normalizedDy * enemy.speed / TILE_SIZE;
+                }
+            }
+        }
+        
+        function updateGame(deltaTime) {
+            if (keys['space']) {
+                placeBomb();
+            }
+
+            updatePlayerMovement();
+
+            // --- Update Bombs ---
+            player.bombs = player.bombs.filter(function(bomb) {
+                if (!bomb.exploded && performance.now() - bomb.time > BOMB_TIMER) {
+                    resolveExplosion(bomb);
+                }
+                return !bomb.exploded; // Remove exploded bombs
+            });
+
+            // --- Update Explosions ---
+            explosions = explosions.filter(function(exp) {
+                return performance.now() - exp.time < EXPLOSION_DURATION;
+            });
+            
+            // --- Update Enemies and Collisions ---
+            enemies.forEach(function(enemy) {
+                // Enemies start a new move only when not currently moving
+                if (performance.now() - enemy.lastMoveTime > enemy.moveDelay && !enemy.isMoving) {
+                    moveEnemy(enemy);
+                }
+                updateEnemyMovement(enemy);
+            });
+
+            // 1. Check Player-Enemy collision
+            if (!player.isDead) {
+                enemies.forEach(function(enemy) {
+                    // Check if centers are too close
+                    var dx = (player.x + 0.5) - (enemy.x + 0.5);
+                    var dy = (player.y + 0.5) - (enemy.y + 0.5);
+                    var distanceSquared = dx * dx + dy * dy;
+
+                    if (distanceSquared < 0.6) { 
+                        player.isDead = true;
+                        stopGame("GAME OVER - CAUGHT BY A BAD GUY!");
+                    }
+                });
+            }
+
+            // 2. Check Explosion-Enemy collision (Kill enemies)
+            enemies = enemies.filter(function(enemy) {
+                var enemyTileX = Math.round(enemy.x);
+                var enemyTileY = Math.round(enemy.y);
+
+                var hitByExplosion = explosions.some(function(exp) {
+                    return exp.x === enemyTileX && exp.y === enemyTileY;
+                });
+
+                return !hitByExplosion; // If hit, filter out (kill)
+            });
+
+
+            // 3. Check Player-Explosion collision
+            if (!player.isDead) {
+                var playerTileX = Math.round(player.x);
+                var playerTileY = Math.round(player.y);
+                
+                var inExplosion = explosions.some(function(exp) {
+                    return exp.x === playerTileX && exp.y === playerTileY;
+                });
+                
+                if (inExplosion) {
+                    player.isDead = true;
+                    stopGame("GAME OVER - BLASTED!");
+                }
+            }
+        }
+
+        // --- Drawing ---
+
+        function drawMap() {
+            for (var y = 0; y < MAP_ROWS; y++) {
+                for (var x = 0; x < MAP_COLS; x++) {
+                    var tile = map[y][x];
+                    var drawColor = COLOR_FLOOR;
+
+                    // Draw the tile background
+                    if (tile === TILE_SOLID) {
+                        drawColor = COLOR_SOLID;
+                    } else if (tile === TILE_SOFT || tile === TILE_EXIT_HIDDEN) {
+                        drawColor = COLOR_SOFT;
+                    } else if (tile === TILE_EXIT_OPEN) {
+                        drawColor = COLOR_EXIT;
+                    }
+                    ctx.fillStyle = drawColor;
+                    ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                    
+                    // Add details
+                    if (tile === TILE_SOLID) {
+                        ctx.fillStyle = '#1f2937'; 
+                        ctx.fillRect(x * TILE_SIZE + 2, y * TILE_SIZE + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+                    } else if (tile === TILE_SOFT || tile === TILE_EXIT_HIDDEN) {
+                        ctx.strokeStyle = '#d1d5db';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(x * TILE_SIZE + 4, y * TILE_SIZE + 4, TILE_SIZE - 8, TILE_SIZE - 8);
+                    } else if (tile === TILE_EXIT_OPEN) {
+                        // Draw Exit Text/Symbol
+                        ctx.fillStyle = 'white';
+                        ctx.font = 'bold 16px Inter';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText('EXIT', x * TILE_SIZE + TILE_SIZE / 2, y * TILE_SIZE + TILE_SIZE / 2);
+                    }
+                }
+            }
+        }
+
+        function drawBombs() {
+            player.bombs.forEach(function(bomb) {
+                var x = bomb.x * TILE_SIZE + TILE_SIZE / 2;
+                var y = bomb.y * TILE_SIZE + TILE_SIZE / 2;
+                
+                ctx.fillStyle = COLOR_BOMB;
+                ctx.beginPath();
+                ctx.arc(x, y, TILE_SIZE * 0.4, 0, Math.PI * 2);
+                ctx.fill();
+
+                var timeRemaining = BOMB_TIMER - (performance.now() - bomb.time);
+                if (timeRemaining < BOMB_TIMER / 3 && timeRemaining % 200 < 100) {
+                    ctx.fillStyle = COLOR_EXPLOSION;
+                    ctx.fillRect(x - 5, y - TILE_SIZE * 0.4 - 5, 10, 5);
+                }
+            });
+        }
+
+        function drawExplosions() {
+            explosions.forEach(function(exp) {
+                var x = exp.x * TILE_SIZE;
+                var y = exp.y * TILE_SIZE;
+                
+                var alpha = 1 - (performance.now() - exp.time) / EXPLOSION_DURATION;
+                ctx.globalAlpha = alpha;
+                
+                ctx.fillStyle = COLOR_EXPLOSION;
+                ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+                
+                ctx.globalAlpha = 1;
+            });
+        }
+        
+        function drawEnemies() {
+            enemies.forEach(function(enemy) {
+                var x = enemy.x * TILE_SIZE;
+                var y = enemy.y * TILE_SIZE;
+
+                // Draw enemy body
+                ctx.fillStyle = COLOR_ENEMY;
+                ctx.beginPath();
+                ctx.arc(x + TILE_SIZE / 2, y + TILE_SIZE / 2, TILE_SIZE * 0.4, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Draw eyes
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(x + TILE_SIZE * 0.35, y + TILE_SIZE * 0.45, TILE_SIZE * 0.1, 0, Math.PI * 2);
+                ctx.arc(x + TILE_SIZE * 0.65, y + TILE_SIZE * 0.45, TILE_SIZE * 0.1, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        function drawPlayer() {
+            var x = player.x * TILE_SIZE;
+            var y = player.y * TILE_SIZE;
+            
+            ctx.fillStyle = player.isDead ? '#000000' : COLOR_PLAYER;
+            ctx.fillRect(x + TILE_SIZE * 0.1, y + TILE_SIZE * 0.1, TILE_SIZE * 0.8, TILE_SIZE * 0.8);
+            
+            // Add eyes
+            ctx.fillStyle = 'white';
+            ctx.fillRect(x + TILE_SIZE * 0.25, y + TILE_SIZE * 0.25, TILE_SIZE * 0.15, TILE_SIZE * 0.15);
+            ctx.fillRect(x + TILE_SIZE * 0.6, y + TILE_SIZE * 0.25, TILE_SIZE * 0.15, TILE_SIZE * 0.15);
+        }
+
+        function draw() {
+            ctx.fillStyle = COLOR_FLOOR;
+            ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            
+            drawMap();
+            drawBombs();
+            drawExplosions();
+            drawEnemies();
+            drawPlayer();
+        }
+
+        // --- Main Loop ---
+
+        function gameLoop(currentTime) {
+            var deltaTime = currentTime - lastTime;
+            lastTime = currentTime;
+            
+            if (isPlaying) {
+                updateGame(deltaTime);
+                draw();
+            }
+            
+            gameLoopId = requestAnimationFrame(gameLoop);
+        }
+
+        // --- Event Listeners ---
+        window.addEventListener('load', function() {
+            setupGame();
+            
+            document.getElementById('start-button').addEventListener('click', function() {
+                if (!isPlaying) {
+                    resetGame();
+                    startGame();
+                }
+            });
+
+            // Keyboard Input
+            window.addEventListener('keydown', handleKeydown);
+            window.addEventListener('keyup', handleKeyup);
+            
+            // Touch/Click Input (On-screen controls)
+            document.querySelectorAll('.dpad-button, #bomb-button').forEach(function(button) {
+                // Use a single handler for both touch and mouse events
+                function startHandler(e) {
+                    if (e.type.includes('touch')) e.preventDefault();
+                    var keyMap = e.currentTarget.dataset.key;
+                    setInputState(keyMap, true);
+                }
+
+                function endHandler(e) {
+                    if (e.type.includes('touch')) e.preventDefault();
+                    var keyMap = e.currentTarget.dataset.key;
+                    setInputState(keyMap, false);
+                }
+
+                button.addEventListener('touchstart', startHandler, { passive: false });
+                button.addEventListener('touchend', endHandler, { passive: false });
+                button.addEventListener('touchcancel', endHandler, { passive: false });
+
+                button.addEventListener('mousedown', startHandler);
+                button.addEventListener('mouseup', endHandler);
+                button.addEventListener('mouseleave', function(e) {
+                     if (e.buttons === 0) endHandler(e);
+                });
+            });
+
+            draw(); 
+        });
+    </script>
+</body>
+</html>
