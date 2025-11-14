@@ -244,4 +244,144 @@ def noodle_wyrm_battle(player, blobbo):
                 play_sound("victory_barf")
                 return "blobbo_stare_win"
             else:
-                slow_print("The Wyrm blinks and f_
+                slow_print("The Wyrm blinks and flails. You take 4 damage.")
+                player["health"] -= 4
+        elif action == "d":
+            slow_print("You try diplomacy. You wax philosophical about carbohydrates.")
+            if random.random() < 0.5:
+                slow_print("The Wyrm seems moved. 'No more eating today,' it says, and wanders off.")
+                return "diplomacy_success"
+            else:
+                slow_print("The Wyrm is unimpressed and slaps you with al dente fury.")
+                player["health"] -= 6
+        else:
+            slow_print("Confusion. You slip on a noodle and lose 1 HP.")
+            player["health"] -= 1
+
+        # Wyrm attacks occasionally
+        if wyrm_hp > 0:
+            slow_print("The Wyrm lunges and smacks you with a saucy tail.")
+            player["health"] -= 3
+            slow_print(f"You have {max(player['health'],0)} HP left.")
+
+    if player["health"] <= 0:
+        slow_print("\nYou have been reduced to a puddle of regret and parmesan.")
+        return "dead"
+
+    slow_print("\nThe Noodle Wyrm retreats in confusion. You win by baffling it.")
+    return "wyrm_defeated"
+
+# ---------------------------
+# Endings & Replay
+# ---------------------------
+def ending_screen(reason_key):
+    # Map reason string to an ending message
+    mapping = {
+        "retreat": ENDINGS[0][0],
+        "dead": ENDINGS[1][0],
+        "wyrm_asleep": ENDINGS[2][0],
+        "blobbo_stare_win": ENDINGS[3][0],
+        "diplomacy_success": "You and the Wyrm open a small noodle bistro together. Business is okay.",
+        "wyrm_defeated": "You defeated the Wyrm through sheer nonsense and questionable bravery. The court of carbs is baffled."
+    }
+    message = mapping.get(reason_key, "You escaped in an oddly unsatisfying manner.")
+    slow_print("\n===== CHAOS DUNGEON ENDING =====")
+    slow_print(message)
+    slow_print("Blobbo: 'Wow. Choices were made.'")
+    slow_print("===============================\n")
+
+# ---------------------------
+# Intro & Companion
+# ---------------------------
+def game_intro():
+    ascii_title()
+    slow_print("You wake up wearing mismatched socks and holding a mysterious half-eaten burrito.\n")
+    slow_print("Two doors wobble in front of you like they're trying to vibe to music only they can hear.\n")
+    choice = input("Do you pick door (1) or door (2)? ").strip()
+    if choice == "1":
+        slow_print(random.choice([
+            "A raccoon in a wizard robe challenges you to rock-paper-scissors.",
+            "A time-traveling potato appears and demands tax documents.",
+            "A chicken riding a Roomba zooms past, screaming 'THE PROPHECY!'",
+            "You fall into a pit of marshmallows. They are sentient. They judge you."
+        ]))
+    else:
+        slow_print(random.choice([
+            "A disco-ball golem asks if you know how to dance the forbidden tango.",
+            "A goblin gives you a motivational speech about personal growth.",
+            "A swarm of bees forms into the shape of a middle finger.",
+            "You meet a ghost who's mad because someone ate his leftovers."
+        ]))
+
+    slow_print("\nAs the weirdness settles, a small blob creature oozes out of your burrito.")
+    slow_print(random.choice(COMPANION_DIALOGUE))
+    slow_print("\nBlobbo tries to climb onto your shoulder but falls off immediately for no reason.")
+    input("\nBlobbo stares at you intensely. Press ENTER to receive unwanted advice...")
+    slow_print(random.choice(BLOBBO_ADVICE))
+
+# ---------------------------
+# Main game flow (ties engine together)
+# ---------------------------
+def play_one_run():
+    player = create_player()
+    blobbo = create_blobbo()
+
+    # initial state
+    game_intro()
+
+    # Give the player's inventory the burrito (we keep it simple)
+    if "half-eaten burrito" not in player["inventory"]:
+        player["inventory"].insert(0, "half-eaten burrito")
+
+    # Random rooms / wandering
+    result = random_room_sequence(player, blobbo)
+    if result == "dead":
+        ending_screen("dead")
+        return
+
+    # If the player retreated or dungeon forced boss, go to boss
+    slow_print("\nThe dungeon pulls you toward a final confrontation…")
+    boss_result = noodle_wyrm_battle(player, blobbo)
+
+    # Final handling / endings
+    if boss_result == "dead":
+        ending_screen("dead")
+    elif boss_result == "wyrm_asleep":
+        ending_screen("wyrm_asleep")
+    elif boss_result == "blobbo_stare_win":
+        ending_screen("blobbo_stare_win")
+    elif boss_result == "diplomacy_success":
+        ending_screen("diplomacy_success")
+    elif boss_result == "wyrm_defeated":
+        ending_screen("wyrm_defeated")
+    else:
+        ending_screen("retreat")
+
+# ---------------------------
+# Reusable Engine Hooks (for you)
+# ---------------------------
+# If you want to use this file as an engine in other scripts, call `play_one_run()`.
+# You can override data by importing and changing ROOM, ENEMY, etc., or extend functions:
+# - Add new rooms to ROOMS
+# - Add enemies to SILLY_ENEMIES
+# - Modify blobbo_evolve() to change evolution behavior
+# - Replace play_sound() with real audio playing implementation
+
+# ---------------------------
+# CLI / Replay loop
+# ---------------------------
+def main():
+    try:
+        while True:
+            play_one_run()
+            again = input("\nPlay again? (y/n): ").lower().strip()
+            if again != "y":
+                slow_print("\nThanks for playing Chaos Dungeon! Farewell, brave burrito-bearer.")
+                break
+            else:
+                slow_print("\n--- RESTARTING THE CHAOS ---\n")
+    except KeyboardInterrupt:
+        slow_print("\n\nSession ended. Blobbo politely waves its appendage. Goodbye!")
+
+if __name__ == "__main__":
+    main()
