@@ -1,0 +1,64 @@
+---
+- name: Update Datadog Agent on Target Servers
+  hosts: all
+  become: yes # Necessary for package management on Linux and local system access on Windows
+  gather_facts: yes
+
+  vars:
+    # ----------------------------------------------------------------------
+    # CONFIGURE THESE VARIABLES
+    # ----------------------------------------------------------------------
+    # UNC Path for the Windows MSI installer
+    datadog_installer_source_win: "\\\\fileserver.corp\\SoftwareShare\\Datadog\\ddagent-7.49.0.msi"
+    # Destination path on the target Windows machine
+    datadog_installer_dest_win: "C:\\Windows\\Temp\\ddagent-7.49.0.msi"
+
+    # URL for the Linux package (RPM example)
+    datadog_installer_url_linux: "http://your-internal-repo.corp/datadog/datadog-agent-7.49.0-1.x86_64.rpm"
+    # ----------------------------------------------------------------------
+
+  tasks:
+    # ----------------------------------------------------------------------
+    # 1. WINDOWS UPGRADE LOGIC
+    # ----------------------------------------------------------------------
+    - name: Copy Windows MSI from centralized share to local temp
+      when: ansible_os_family == "Windows"
+      ansible.windows.win_copy:
+        src: "{{ datadog_installer_source_win }}"
+        dest: "{{ datadog_installer_dest_win }}"
+      tags: windows
+
+    - name: Install or Upgrade Datadog Agent on Windows
+      when: ansible_os_family == "Windows"
+      ansible.windows.win_package:
+        path: "{{ datadog_installer_dest_win }}"
+        state: present
+        # Note: The existing MSI arguments (API Key, Site) are usually preserved
+        # during an upgrade when running the installer over an existing installation.
+      tags: windows
+
+    # ----------------------------------------------------------------------
+    # 2. LINUX UPGRADE LOGIC
+    # ----------------------------------------------------------------------
+    - name: Install or Upgrade Datadog Agent on RHEL/CentOS (RedHat family)
+      when: ansible_os_family == "RedHat"
+      ansible.builtin.yum:
+        name: "{{ datadog_installer_url_linux }}"
+        state: latest
+      tags: linux, redhat
+
+    - name: Download .deb package for Debian family
+      when: ansible_os_family == "Debian"
+      ansible.builtin.get_url:
+        url: "{{ datadog_installer_url_linux | replace('.rpm', '.deb') }}"
+        dest: /tmp/datadog-agent-upgrade.deb
+        mode: '0644'
+      tags: linux, debian
+
+    - name: Install or Upgrade Datadog Agent from local .deb file
+      when: ansible_os_family == "Debian"
+      ansible.builtin.apt:
+        deb: /tmp/datadog-agent-upgrade.deb
+        state: present
+        update_cache: yes
+      tags: linux, debian
