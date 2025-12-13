@@ -1,0 +1,57 @@
+# Datadog Agent Upgrade Playbook
+
+This repository contains an Ansible playbook designed to update the Datadog Agent on a mixed fleet of Linux and Windows servers by retrieving the installer package from a centralized network location (e.g., a file share or internal HTTP repository).
+
+## Requirements
+
+* Ansible control node configured and able to connect via SSH (Linux) and WinRM (Windows) to the target servers.
+* The target servers must be defined in the Ansible inventory (`inventory.ini`).
+* **Permissions:** The user running the playbook must have sufficient privileges (root/administrator access via `become: yes`) on the target machines.
+* **Windows UNC Access:** The user/account Ansible uses to connect to the Windows hosts **must have read access** to the `datadog_installer_source_win` network share.
+
+## 1. Setup
+
+### 1.1. Playbook Variables (`update_datadog_agent.yml`)
+
+Before execution, modify the `vars` section in `update_datadog_agent.yml` to point to the correct file paths:
+
+| Variable | Target OS | Description |
+| :--- | :--- | :--- |
+| `datadog_installer_source_win` | Windows | The UNC path (e.g., `\\fileserver\share\file.msi`) to the MSI installer. |
+| `datadog_installer_dest_win` | Windows | The local temporary path on the target server where the MSI will be copied before execution. |
+| `datadog_installer_url_linux` | Linux | The direct URL to the RPM package (for RHEL/CentOS) or the source URL for the corresponding DEB package (for Debian/Ubuntu). |
+
+### 1.2. Inventory File (`inventory.ini` Example)
+
+Ensure your target servers are grouped correctly. The playbook uses `hosts: all`, so all listed hosts will be targeted.
+
+```ini
+[all:vars]
+ansible_user=ansible_admin_user
+
+[windows]
+winserver01
+winserver02
+
+[linux]
+linuxserver01
+linuxserver02
+
+
+## Execution
+
+  ansible-playbook -i inventory.ini update_datadog_agent.yml
+
+  If you only need to target windows servers
+  ansible-playbook -i inventory.ini update_datadog_agent.yml --tags windows
+
+  If you only need to target linux servers
+  ansible-playbook -i inventory.ini update_datadog_agent.yml --tags linux
+
+## Playbook Logic Overview
+OS Family	Steps	Modules Used
+Windows	1. Copy MSI from UNC share to local C:\Windows\Temp.	ansible.windows.win_copy
+2. Execute MSI upgrade locally.	ansible.windows.win_package
+RedHat/CentOS	Install/upgrade RPM directly from the centralized HTTP URL.	ansible.builtin.yum
+Debian/Ubuntu	1. Download DEB package from the centralized URL to /tmp.	ansible.builtin.get_url
+2. Install/upgrade from the local DEB file.	ansible.builtin.apt
