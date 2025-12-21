@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Lights Out Handheld</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --case-color: #2d5a27; /* Dark green plastic */
+            --tile-off: #4a4a4a;   /* Grey off state */
+            --tile-on: #fbbf24;    /* Bright yellow on state */
+        }
+        
+        body {
+            background-color: #1a1a1a;
+            user-select: none;
+            touch-action: manipulation;
+        }
+
+        .handheld-case {
+            background-color: var(--case-color);
+            border: 8px solid #1e3a1a;
+            box-shadow: 
+                inset 0 4px 10px rgba(255,255,255,0.2),
+                0 20px 50px rgba(0,0,0,0.5);
+        }
+
+        .grid-container {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 12px;
+            padding: 20px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 12px;
+        }
+
+        .tile {
+            aspect-ratio: 1/1;
+            background-color: var(--tile-off);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            border: 4px solid #333;
+            box-shadow: inset 0 -4px 0 rgba(0,0,0,0.3);
+        }
+
+        .tile.is-on {
+            background-color: var(--tile-on);
+            border-color: #d97706;
+            box-shadow: 
+                0 0 15px rgba(251, 191, 36, 0.6),
+                inset 0 -4px 0 rgba(0,0,0,0.2);
+        }
+
+        .tile:active {
+            transform: scale(0.92);
+            box-shadow: none;
+        }
+
+        .label-text {
+            font-family: 'Courier New', Courier, monospace;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            font-weight: bold;
+            color: #a3c19e;
+        }
+
+        .lcd-screen {
+            background-color: #7c9473;
+            border: 4px inset #4a5a44;
+            color: #1a2a16;
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        /* Scanline effect for that vintage feel */
+        .lcd-screen::after {
+            content: " ";
+            position: absolute;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
+            background-size: 100% 3px, 3px 100%;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+
+    <div class="handheld-case w-full max-w-md rounded-[40px] p-8 flex flex-col items-center">
+        <!-- Brand Area -->
+        <div class="mb-6 flex flex-col items-center">
+            <h1 class="text-3xl font-black text-white italic tracking-tighter">TIGER</h1>
+            <div class="label-text text-sm">ELECTRONICS</div>
+        </div>
+
+        <!-- Mini Display -->
+        <div class="lcd-screen w-full relative h-16 rounded-lg mb-8 flex items-center justify-between px-6 overflow-hidden">
+            <div class="flex flex-col">
+                <span class="text-[10px] uppercase font-bold">Moves</span>
+                <span id="move-count" class="text-2xl font-black">00</span>
+            </div>
+            <div class="text-right">
+                <div id="status-text" class="text-sm font-bold uppercase">Ready</div>
+            </div>
+        </div>
+
+        <!-- The 5x5 Grid -->
+        <div id="grid" class="grid-container w-full"></div>
+
+        <!-- Controls -->
+        <div class="mt-10 flex gap-6">
+            <button onclick="scramble()" class="bg-red-700 hover:bg-red-600 active:bg-red-800 text-white rounded-full w-16 h-16 flex items-center justify-center shadow-lg border-b-4 border-red-900 transition-all">
+                <span class="text-[10px] font-bold uppercase">Reset</span>
+            </button>
+            <button onclick="newGame()" class="bg-gray-700 hover:bg-gray-600 active:bg-gray-800 text-white rounded-full w-16 h-16 flex items-center justify-center shadow-lg border-b-4 border-gray-900 transition-all">
+                <span class="text-[10px] font-bold uppercase text-center leading-tight">New<br>Level</span>
+            </button>
+        </div>
+
+        <div class="mt-8 label-text text-xs opacity-50">Lights Out Puzzle Game</div>
+    </div>
+
+    <!-- Win Modal -->
+    <div id="win-modal" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 p-6 text-white">
+        <div class="bg-green-900 p-8 rounded-3xl text-center max-w-sm w-full border-4 border-green-500">
+            <h2 class="text-4xl font-black mb-2 text-yellow-400">WINNER!</h2>
+            <p id="win-message" class="text-green-200 mb-6 font-mono"></p>
+            <button onclick="newGame()" class="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-black py-4 rounded-2xl transition">
+                NEXT PUZZLE
+            </button>
+        </div>
+    </div>
+
+<script>
+    const gridEl = document.getElementById('grid');
+    const moveCountEl = document.getElementById('move-count');
+    const statusTextEl = document.getElementById('status-text');
+    const winModal = document.getElementById('win-modal');
+    
+    let grid = Array(5).fill().map(() => Array(5).fill(false));
+    let moves = 0;
+
+    // Build the grid in the DOM
+    function createUI() {
+        gridEl.innerHTML = '';
+        for (let r = 0; r < 5; r++) {
+            for (let c = 0; c < 5; c++) {
+                const tile = document.createElement('div');
+                tile.className = 'tile';
+                tile.id = `tile-${r}-${c}`;
+                tile.addEventListener('mousedown', (e) => handleInteraction(r, c));
+                tile.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    handleInteraction(r, c);
+                });
+                gridEl.appendChild(tile);
+            }
+        }
+    }
+
+    function handleInteraction(r, c) {
+        toggleLights(r, c);
+        moves++;
+        updateUI();
+        checkWin();
+    }
+
+    function toggleLights(r, c) {
+        // Toggle target and neighbors
+        const targets = [
+            [r, c], [r - 1, c], [r + 1, c], [r, c - 1], [r, c + 1]
+        ];
+
+        targets.forEach(([row, col]) => {
+            if (row >= 0 && row < 5 && col >= 0 && col < 5) {
+                grid[row][col] = !grid[row][col];
+            }
+        });
+    }
+
+    function updateUI() {
+        for (let r = 0; r < 5; r++) {
+            for (let c = 0; c < 5; c++) {
+                const tile = document.getElementById(`tile-${r}-${c}`);
+                if (grid[r][c]) {
+                    tile.classList.add('is-on');
+                } else {
+                    tile.classList.remove('is-on');
+                }
+            }
+        }
+        moveCountEl.textContent = moves.toString().padStart(2, '0');
+    }
+
+    function scramble() {
+        grid = Array(5).fill().map(() => Array(5).fill(false));
+        moves = 0;
+        
+        // Simulating random moves ensures the puzzle is solvable
+        const scrambleCount = 5 + Math.floor(Math.random() * 10);
+        for (let i = 0; i < scrambleCount; i++) {
+            const r = Math.floor(Math.random() * 5);
+            const c = Math.floor(Math.random() * 5);
+            toggleLights(r, c);
+        }
+        
+        statusTextEl.textContent = "Playing";
+        updateUI();
+    }
+
+    function newGame() {
+        winModal.classList.add('hidden');
+        scramble();
+    }
+
+    function checkWin() {
+        const allOff = grid.every(row => row.every(light => !light));
+        if (allOff && moves > 0) {
+            statusTextEl.textContent = "Solved";
+            document.getElementById('win-message').textContent = `PUZZLE SOLVED IN ${moves} MOVES!`;
+            setTimeout(() => {
+                winModal.classList.remove('hidden');
+                winModal.classList.add('flex');
+            }, 300);
+        }
+    }
+
+    // Initialize
+    createUI();
+    scramble();
+
+</script>
+</body>
+</html>
