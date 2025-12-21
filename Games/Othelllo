@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Othello: Casual Play</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --board-bg: #eab308; 
+            --grid-line: #ca8a04; 
+        }
+        body {
+            background-color: #111827;
+            touch-action: manipulation;
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+        .board-container {
+            aspect-ratio: 1/1;
+            width: 100%;
+            max-width: 500px;
+            background-color: var(--grid-line);
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            grid-template-rows: repeat(8, 1fr);
+            gap: 2px;
+            border: 4px solid var(--grid-line);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+        }
+        .cell {
+            background-color: var(--board-bg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            cursor: pointer;
+        }
+        .disc {
+            width: 85%;
+            height: 85%;
+            border-radius: 50%;
+            transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s;
+            transform-style: preserve-3d;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+        }
+        .disc.black {
+            background-color: #000;
+            transform: rotateY(0deg);
+        }
+        .disc.white {
+            background-color: #fff;
+            transform: rotateY(180deg);
+        }
+        .hint {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: rgba(0, 0, 0, 0.1);
+        }
+        .status-pill {
+            transition: all 0.3s ease;
+        }
+        .active-turn {
+            ring: 4px;
+            ring-color: #facc15;
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen p-4">
+
+    <!-- Header Stats -->
+    <div class="w-full max-w-[500px] flex justify-between items-center mb-6">
+        <div id="player-card" class="status-pill flex items-center gap-3 bg-gray-800 px-4 py-2 rounded-full border-2 border-transparent">
+            <div class="w-4 h-4 rounded-full bg-black border border-gray-600"></div>
+            <div class="text-white font-bold">You: <span id="black-score">2</span></div>
+        </div>
+        
+        <div id="status-msg" class="text-gray-500 font-medium text-xs uppercase tracking-widest">Your Turn</div>
+
+        <div id="cpu-card" class="status-pill flex items-center gap-3 bg-gray-800 px-4 py-2 rounded-full border-2 border-transparent">
+            <div class="text-white font-bold">CPU: <span id="white-score">2</span></div>
+            <div class="w-4 h-4 rounded-full bg-white border border-gray-300"></div>
+        </div>
+    </div>
+
+    <!-- 8x8 Yellow Board -->
+    <div id="board" class="board-container rounded-lg overflow-hidden"></div>
+
+    <!-- Controls -->
+    <div class="mt-8 flex gap-4 w-full max-w-[500px]">
+        <button onclick="resetGame()" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-xl transition">
+            New Game
+        </button>
+    </div>
+
+    <!-- End Game Overlay -->
+    <div id="overlay" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 p-6 text-white">
+        <div class="bg-gray-800 p-8 rounded-3xl text-center max-w-sm w-full border border-gray-700">
+            <h2 id="winner-title" class="text-3xl font-black mb-2">Game Over</h2>
+            <p id="winner-body" class="text-gray-400 mb-6"></p>
+            <button onclick="resetGame()" class="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-black py-4 rounded-2xl transition">
+                Play Again
+            </button>
+        </div>
+    </div>
+
+<script>
+    const boardEl = document.getElementById('board');
+    const blackScoreEl = document.getElementById('black-score');
+    const whiteScoreEl = document.getElementById('white-score');
+    const statusMsg = document.getElementById('status-msg');
+    const overlay = document.getElementById('overlay');
+    
+    let board = []; 
+    let turn = 1; // 1: User (Black), 2: CPU (White)
+    let isCpuThinking = false;
+
+    function initBoard() {
+        boardEl.innerHTML = '';
+        board = Array(8).fill().map(() => Array(8).fill(0));
+        
+        // Classic starting position
+        board[3][3] = 2; board[4][4] = 2;
+        board[3][4] = 1; board[4][3] = 1;
+
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                const cell = document.createElement('div');
+                cell.className = 'cell';
+                cell.dataset.r = r;
+                cell.dataset.c = c;
+                cell.onclick = () => handleCellClick(r, c);
+                boardEl.appendChild(cell);
+            }
+        }
+        render();
+    }
+
+    function render() {
+        const cells = boardEl.children;
+        let bCount = 0;
+        let wCount = 0;
+        const validMoves = getValidMoves(turn);
+
+        for (let i = 0; i < 64; i++) {
+            const r = Math.floor(i / 8);
+            const c = i % 8;
+            const val = board[r][c];
+            const cell = cells[i];
+            cell.innerHTML = '';
+
+            if (val !== 0) {
+                const disc = document.createElement('div');
+                disc.className = `disc ${val === 1 ? 'black' : 'white'}`;
+                cell.appendChild(disc);
+                if (val === 1) bCount++; else wCount++;
+            } else if (turn === 1 && validMoves.some(m => m.r === r && m.c === c)) {
+                const hint = document.createElement('div');
+                hint.className = 'hint';
+                cell.appendChild(hint);
+            }
+        }
+
+        blackScoreEl.textContent = bCount;
+        whiteScoreEl.textContent = wCount;
+
+        document.getElementById('player-card').classList.toggle('active-turn', turn === 1);
+        document.getElementById('cpu-card').classList.toggle('active-turn', turn === 2);
+        statusMsg.textContent = turn === 1 ? "Your Turn" : "CPU's Turn";
+
+        // Check if game is over
+        if (bCount + wCount === 64 || (getValidMoves(1).length === 0 && getValidMoves(2).length === 0)) {
+            showEndGame(bCount, wCount);
+        }
+    }
+
+    function handleCellClick(r, c) {
+        if (turn !== 1 || isCpuThinking) return;
+        
+        const move = getValidMoves(1).find(m => m.r === r && m.c === c);
+        if (move) {
+            executeMove(r, c, 1, move.flips);
+        }
+    }
+
+    function executeMove(r, c, player, flips) {
+        board[r][c] = player;
+        flips.forEach(pos => {
+            board[pos.r][pos.c] = player;
+        });
+
+        turn = (player === 1) ? 2 : 1;
+        render();
+
+        if (turn === 2) {
+            startCpuTurn();
+        } else {
+            checkPass();
+        }
+    }
+
+    function checkPass() {
+        if (getValidMoves(turn).length === 0) {
+            turn = (turn === 1) ? 2 : 1;
+            if (getValidMoves(turn).length === 0) return;
+            if (turn === 2) startCpuTurn();
+            render();
+        }
+    }
+
+    function startCpuTurn() {
+        isCpuThinking = true;
+        // Added a longer delay to make the game feel more natural
+        setTimeout(() => {
+            const moves = getValidMoves(2);
+            if (moves.length > 0) {
+                // Casual AI: 80% chance to just pick a completely random move
+                // 20% chance to pick the move that flips the MOST tiles (simple greed)
+                // It no longer cares about corners!
+                let selectedMove;
+                const randomChance = Math.random();
+                
+                if (randomChance < 0.8) {
+                    selectedMove = moves[Math.floor(Math.random() * moves.length)];
+                } else {
+                    moves.sort((a, b) => b.flips.length - a.flips.length);
+                    selectedMove = moves[0];
+                }
+
+                executeMove(selectedMove.r, selectedMove.c, 2, selectedMove.flips);
+            } else {
+                turn = 1;
+                render();
+            }
+            isCpuThinking = false;
+        }, 1200);
+    }
+
+    function getValidMoves(player) {
+        const moves = [];
+        const opponent = player === 1 ? 2 : 1;
+        const dirs = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                if (board[r][c] !== 0) continue;
+
+                let totalFlips = [];
+                dirs.forEach(([dr, dc]) => {
+                    let nr = r + dr, nc = c + dc;
+                    let path = [];
+                    while (nr >= 0 && nr < 8 && nc >= 0 && nc < 8 && board[nr][nc] === opponent) {
+                        path.push({r: nr, c: nc});
+                        nr += dr; nc += dc;
+                    }
+                    if (path.length > 0 && nr >= 0 && nr < 8 && nc >= 0 && nc < 8 && board[nr][nc] === player) {
+                        totalFlips = totalFlips.concat(path);
+                    }
+                });
+
+                if (totalFlips.length > 0) {
+                    moves.push({r, c, flips: totalFlips});
+                }
+            }
+        }
+        return moves;
+    }
+
+    function showEndGame(b, w) {
+        overlay.style.display = 'flex';
+        const title = document.getElementById('winner-title');
+        const body = document.getElementById('winner-body');
+        
+        if (b > w) {
+            title.textContent = "Victory!";
+            body.textContent = `You won ${b} to ${w}!`;
+        } else if (w > b) {
+            title.textContent = "CPU Wins";
+            body.textContent = `The CPU won ${w} to ${b}.`;
+        } else {
+            title.textContent = "Draw";
+            body.textContent = `Both players ended with ${b} tiles.`;
+        }
+    }
+
+    function resetGame() {
+        overlay.style.display = 'none';
+        turn = 1;
+        isCpuThinking = false;
+        initBoard();
+    }
+
+    window.onload = initBoard;
+</script>
+</body>
+</html>
