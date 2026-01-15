@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Snake – Clean & Fast</title>
+  <style>
+    body {
+      margin: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      background: #0f0f18;
+      font-family: system-ui, sans-serif;
+      color: #fff;
+    }
+    .wrap { text-align: center; }
+    canvas {
+      background: #000;
+      border-radius: 12px;
+      box-shadow: 0 20px 40px rgba(0,0,0,.6);
+    }
+    .hud { margin-top: 10px; opacity: 0.85; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <canvas id="game" width="480" height="480"></canvas>
+  <div class="hud" id="hud">Score: 0 | Speed: 8</div>
+</div>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const hud = document.getElementById("hud");
+
+const GRID = 20;
+const TILES = canvas.width / GRID;
+
+let snake, dir, food;
+let score, speed, alive;
+let timer = 0;
+
+function reset() {
+  snake = [ {x: 12, y: 12}, {x: 11, y: 12}, {x: 10, y: 12} ];
+  dir = {x: 1, y: 0};
+  score = 0;
+  speed = 8; // moves per second
+  alive = true;
+  food = spawnFood();
+  updateHud();
+}
+
+function updateHud() {
+  hud.textContent = `Score: ${score} | Speed: ${speed.toFixed(1)}`;
+}
+
+function rand(n) { return Math.floor(Math.random() * n); }
+
+function spawnFood() {
+  let p;
+  do {
+    p = { x: rand(TILES), y: rand(TILES) };
+  } while (snake.some(s => s.x === p.x && s.y === p.y));
+  return p;
+}
+
+function update(dt) {
+  if (!alive) return;
+
+  timer += dt;
+  if (timer < 1000 / speed) return;
+  timer = 0;
+
+  const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+
+  if (
+    head.x < 0 || head.y < 0 ||
+    head.x >= TILES || head.y >= TILES ||
+    snake.some(s => s.x === head.x && s.y === head.y)
+  ) {
+    alive = false;
+    return;
+  }
+
+  snake.unshift(head);
+
+  if (head.x === food.x && head.y === food.y) {
+    score++;
+    if (score % 10 === 0) {
+      speed += 0.8; // gentle ramp
+    }
+    food = spawnFood();
+    updateHud();
+  } else {
+    snake.pop();
+  }
+}
+
+function draw() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // food
+  ctx.fillStyle = "#ff4d4d";
+  ctx.beginPath();
+  ctx.arc(food.x * GRID + GRID/2, food.y * GRID + GRID/2, 6, 0, Math.PI*2);
+  ctx.fill();
+
+  // snake
+  const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+  grad.addColorStop(0, "#3cffb0");
+  grad.addColorStop(1, "#1fa2ff");
+
+  snake.forEach((s,i) => {
+    ctx.fillStyle = grad;
+    ctx.fillRect(s.x * GRID + 1, s.y * GRID + 1, GRID - 2, GRID - 2);
+    if (i === 0) {
+      ctx.fillStyle = "rgba(255,255,255,.4)";
+      ctx.fillRect(s.x * GRID + 5, s.y * GRID + 5, GRID - 10, GRID - 10);
+    }
+  });
+
+  if (!alive) {
+    ctx.fillStyle = "rgba(0,0,0,.6)";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 32px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText("Game Over", canvas.width/2, canvas.height/2);
+    ctx.font = "14px system-ui";
+    ctx.fillText("Press Space", canvas.width/2, canvas.height/2 + 26);
+  }
+}
+
+function loop(t) {
+  const dt = t - (loop.last || t);
+  loop.last = t;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+window.addEventListener("keydown", e => {
+  const k = e.key.toLowerCase();
+  if ((k === "arrowup" || k === "w") && dir.y !== 1) dir = {x:0,y:-1};
+  if ((k === "arrowdown" || k === "s") && dir.y !== -1) dir = {x:0,y:1};
+  if ((k === "arrowleft" || k === "a") && dir.x !== 1) dir = {x:-1,y:0};
+  if ((k === "arrowright" || k === "d") && dir.x !== -1) dir = {x:1,y:0};
+  if (k === " " && !alive) reset();
+});
+
+reset();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
