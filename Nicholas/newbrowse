@@ -1,20 +1,20 @@
-# Enable DNS-SD browsing
+# --- Browsing ---
 BrowseRemoteProtocols dnssd
 BrowseLocalProtocols dnssd
 
-# Create queues for network printers
-CreateIPPPrinterQueues Everywhere
+# --- Create queues for remote CUPS ---
+CreateIPPPrinterQueues No
 
-# Naming must match to allow clustering
+# --- Naming: REQUIRED for clustering ---
 LocalQueueNamingRemoteCUPS RemoteName
 
-# Enable implicit classes
+# --- Clustering ---
 AutoClustering Yes
 ImplicitClasses Yes
 
-# Enable round-robin load balancing
+# --- Load balancing (round-robin) ---
 LoadBalancing QueueOnClient
 
-# Stability
+# --- Stability / hygiene ---
 BrowseTimeout 300
 KeepGeneratedQueuesOnShutdown Yes
