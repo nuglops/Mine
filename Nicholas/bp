@@ -1,0 +1,21 @@
+cupsdisable -r "hardware issue" printer_name
+The printer is marked Stopped
+
+cups-browsed sees it as unavailable
+
+The printer is automatically removed from the implicit class
+
+Jobs are sent only to the remaining printers
+
+cupsenable printer_name
+Rediscover it
+
+Re-add it to the implicit class
+
+Resume round-robin automatically
+
+✔ No client changes
+✔ No restarts required
+✔ No risk of class corruption
+
+This is the cleanest and safest method.
