@@ -1,0 +1,32 @@
+Reading command line option -f, unknown command line option.
+
+cups-browsed of cups-filters version 1.28.7
+
+Usage: cups-browsed [options]
+Options:
+  -c cups-browsed.conf    Set alternative cups-browsed.conf file to use.
+  -d
+  -v
+  --debug                 Run in debug mode (logging to stderr).
+  -l
+  --logfile               Run in debug mode (logging into file).
+  -h
+  --help
+  --version               Show this usage message.
+  -o Option=Value         Supply configuration option via command line,
+                          options are the same as in cups-browsed.conf.
+  --autoshutdown=<mode>   Automatically shut down cups-browsed when inactive:
+                          <mode> can be set to Off, On, or avahi, where Off
+                          means that cups-browsed stays running permanently
+                          (default), On means that it shuts down after 30
+                          seconds (or any given timeout) of inactivity, and
+                          avahi means that cups-browsed shuts down when
+                          avahi-daemon shuts down.
+  --autoshutdown-timout=<time> Timeout (in seconds) for auto-shutdown.
+  --autoshutdown-on=<type> Type of inactivity which leads to an auto-
+                          shutdown: If <type> is "no-queues", the shutdown
+                          is triggered by not having any cups-browsed-created
+                          print queue any more. With <type> being "no-jobs"
+                          shutdown is initiated by no job being printed
+                          on any cups-browsed-generated print queue any more.
+                          "no-queues" is the default.
