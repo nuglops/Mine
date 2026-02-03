@@ -1,2 +1,9 @@
+sudo mkdir -p /etc/systemd/system/cups.service.d
+sudo tee /etc/systemd/system/cups.service.d/override.conf <<'EOF'
 [Service]
 ExecReload=/usr/sbin/cupsctl
+EOF
+
+
+sudo systemctl daemon-reload
+systemctl show cups -p CanReload
