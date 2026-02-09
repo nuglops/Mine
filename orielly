@@ -1,0 +1,5 @@
+There is an option to parse all content from o'reily API's and make .epub or .pdf file
+https://learning.oreilly.com/api/v2/epubs/urn:orm:book:9781835468609/files
+
+Integers in URL is id of book, you could find it in o'reily book page.
+Use subscribed (or trial) account's cookies for successfull parsing, otherwise you will receive partial content.
